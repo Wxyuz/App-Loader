@@ -82,6 +82,23 @@ function Close-Safe {
     }
 }
 
+function Close-ThisPowerShell {
+    try {
+        [Console]::CursorVisible = $true
+    }
+    catch {
+    }
+
+    Start-Sleep -Milliseconds 300
+
+    try {
+        Stop-Process -Id $PID -Force
+    }
+    catch {
+        exit
+    }
+}
+
 $Response = $null
 $InputStream = $null
 $OutputStream = $null
@@ -173,19 +190,13 @@ try {
 
     Clear-Host
     Show-ProgressBar -Percent 100
-    Start-Sleep -Milliseconds 300
+    Start-Sleep -Milliseconds 400
 
     Start-Process -FilePath $OutFile -WorkingDirectory $TempFolder
 
-    Start-Sleep -Milliseconds 700
+    Start-Sleep -Milliseconds 800
 
-    try {
-        [Console]::CursorVisible = $true
-    }
-    catch {
-    }
-
-    [Environment]::Exit(0)
+    Close-ThisPowerShell
 }
 catch {
     Close-Safe -Object $OutputStream
@@ -206,5 +217,5 @@ catch {
     Write-Host ""
     Start-Sleep -Seconds 5
 
-    [Environment]::Exit(1)
+    Close-ThisPowerShell
 }
