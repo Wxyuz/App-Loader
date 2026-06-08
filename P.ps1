@@ -10,10 +10,9 @@ $OutFile = Join-Path $TempFolder $FileName
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-function Show-LoadingBar {
+function Show-ProgressBar {
     param(
-        [int]$Percent,
-        [string]$Text
+        [int]$Percent
     )
 
     if ($Percent -lt 0) {
@@ -24,64 +23,87 @@ function Show-LoadingBar {
         $Percent = 100
     }
 
-    $BarSize = 35
-    $FilledSize = [math]::Floor(($Percent / 100) * $BarSize)
-    $EmptySize = $BarSize - $FilledSize
+    $BarWidth = 40
+    $Filled = [math]::Floor(($Percent / 100) * $BarWidth)
+    $Empty = $BarWidth - $Filled
 
     $FilledBar = ""
     $EmptyBar = ""
 
-    if ($FilledSize -gt 0) {
-        $FilledBar = "█" * $FilledSize
+    if ($Filled -gt 0) {
+        $FilledBar = "#" * $Filled
     }
 
-    if ($EmptySize -gt 0) {
-        $EmptyBar = "░" * $EmptySize
+    if ($Empty -gt 0) {
+        $EmptyBar = "-" * $Empty
     }
 
-    Write-Host -NoNewline "`r$Text [$FilledBar$EmptyBar] $Percent%"
+    $Line = ("App-Loader [{0}{1}] {2,3}%" -f $FilledBar, $EmptyBar, $Percent)
+
+    try {
+        $Width = [Console]::WindowWidth - 1
+    }
+    catch {
+        $Width = 80
+    }
+
+    if ($Line.Length -gt $Width) {
+        $Line = $Line.Substring(0, $Width)
+    }
+
+    $Spaces = " " * ([math]::Max(0, $Width - $Line.Length))
+
+    Write-Host -NoNewline "`r$Line$Spaces"
 }
 
-function Close-AllStreams {
+function Close-ObjectSafe {
     param(
-        $ResponseStream,
-        $FileStream,
-        $Response
+        $Object
     )
 
-    if ($ResponseStream -ne $null) {
-        $ResponseStream.Close()
-        $ResponseStream.Dispose()
+    if ($null -ne $Object) {
+        try {
+            $Object.Close()
+        }
+        catch {
+        }
+
+        try {
+            $Object.Dispose()
+        }
+        catch {
+        }
     }
-
-    if ($FileStream -ne $null) {
-        $FileStream.Close()
-        $FileStream.Dispose()
-    }
-
-    if ($Response -ne $null) {
-        $Response.Close()
-        $Response.Dispose()
-    }
-}
-
-Clear-Host
-$Host.UI.RawUI.WindowTitle = "App-Loader"
-
-if (!(Test-Path $TempFolder)) {
-    New-Item -ItemType Directory -Path $TempFolder | Out-Null
-}
-
-if (Test-Path $OutFile) {
-    Remove-Item -Path $OutFile -Force
 }
 
 $Response = $null
-$ResponseStream = $null
-$FileStream = $null
+$InputStream = $null
+$OutputStream = $null
 
 try {
-    Show-LoadingBar -Percent 0 -Text "Loading"
+    Clear-Host
+
+    try {
+        $Host.UI.RawUI.WindowTitle = "App-Loader"
+    }
+    catch {
+    }
+
+    try {
+        [Console]::CursorVisible = $false
+    }
+    catch {
+    }
+
+    if (!(Test-Path $TempFolder)) {
+        New-Item -ItemType Directory -Path $TempFolder | Out-Null
+    }
+
+    if (Test-Path $OutFile) {
+        Remove-Item -Path $OutFile -Force
+    }
+
+    Show-ProgressBar -Percent 0
 
     $Request = [System.Net.HttpWebRequest]::Create($ExeUrl)
     $Request.Method = "GET"
@@ -91,93 +113,92 @@ try {
     $Request.ReadWriteTimeout = 30000
 
     $Response = $Request.GetResponse()
-    $TotalBytes = $Response.ContentLength
+    $TotalBytes = [int64]$Response.ContentLength
 
-    $ResponseStream = $Response.GetResponseStream()
-    $FileStream = [System.IO.File]::Create($OutFile)
+    $InputStream = $Response.GetResponseStream()
+    $OutputStream = [System.IO.File]::Create($OutFile)
 
-    $Buffer = New-Object byte[] 81920
+    $Buffer = New-Object byte[] 65536
     $TotalRead = 0
+    $Percent = 0
     $LastPercent = -1
 
     while ($true) {
-        $Read = $ResponseStream.Read($Buffer, 0, $Buffer.Length)
+        $Read = $InputStream.Read($Buffer, 0, $Buffer.Length)
 
         if ($Read -le 0) {
             break
         }
 
-        $FileStream.Write($Buffer, 0, $Read)
+        $OutputStream.Write($Buffer, 0, $Read)
         $TotalRead += $Read
 
         if ($TotalBytes -gt 0) {
-            $Percent = [int](($TotalRead / $TotalBytes) * 100)
+            $Percent = [int][math]::Floor(($TotalRead / $TotalBytes) * 100)
         }
         else {
-            $Percent = ($Percent + 3) % 100
+            if ($Percent -lt 95) {
+                $Percent++
+            }
         }
 
         if ($Percent -ne $LastPercent) {
-            Show-LoadingBar -Percent $Percent -Text "Loading"
+            Show-ProgressBar -Percent $Percent
             $LastPercent = $Percent
         }
     }
 
-    Close-AllStreams -ResponseStream $ResponseStream -FileStream $FileStream -Response $Response
+    Close-ObjectSafe -Object $OutputStream
+    Close-ObjectSafe -Object $InputStream
+    Close-ObjectSafe -Object $Response
 
-    Show-LoadingBar -Percent 100 -Text "Loading"
-    Start-Sleep -Milliseconds 500
-}
-catch {
-    Close-AllStreams -ResponseStream $ResponseStream -FileStream $FileStream -Response $Response
+    Show-ProgressBar -Percent 100
+    Start-Sleep -Milliseconds 400
+
+    if (!(Test-Path $OutFile)) {
+        throw "loader.exe not found after download."
+    }
+
+    $FileInfo = Get-Item $OutFile
+
+    if ($FileInfo.Length -le 0) {
+        throw "loader.exe is empty."
+    }
 
     Clear-Host
-    Write-Host ""
-    Write-Host "Download failed"
-    Write-Host ""
-    Write-Host $_.Exception.Message
-    Write-Host ""
-    Pause
-    exit
-}
-
-if (!(Test-Path $OutFile)) {
-    Clear-Host
-    Write-Host ""
-    Write-Host "loader.exe not found"
-    Write-Host ""
-    Pause
-    exit
-}
-
-$FileInfo = Get-Item $OutFile
-
-if ($FileInfo.Length -le 0) {
-    Clear-Host
-    Write-Host ""
-    Write-Host "loader.exe is empty"
-    Write-Host ""
-    Pause
-    exit
-}
-
-try {
-    Clear-Host
-    Show-LoadingBar -Percent 100 -Text "Ready"
+    Show-ProgressBar -Percent 100
     Start-Sleep -Milliseconds 300
 
     Start-Process -FilePath $OutFile -WorkingDirectory $TempFolder
 
-    Start-Sleep -Milliseconds 700
-    exit
+    Start-Sleep -Milliseconds 500
+
+    try {
+        [Console]::CursorVisible = $true
+    }
+    catch {
+    }
+
+    [Environment]::Exit(0)
 }
 catch {
+    Close-ObjectSafe -Object $OutputStream
+    Close-ObjectSafe -Object $InputStream
+    Close-ObjectSafe -Object $Response
+
+    try {
+        [Console]::CursorVisible = $true
+    }
+    catch {
+    }
+
     Clear-Host
     Write-Host ""
-    Write-Host "Cannot start loader.exe"
+    Write-Host "App-Loader failed."
     Write-Host ""
     Write-Host $_.Exception.Message
     Write-Host ""
-    Pause
-    exit
+    Start-Sleep -Seconds 5
+
+    [Environment]::Exit(1)
 }
