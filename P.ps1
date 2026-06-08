@@ -1,48 +1,138 @@
 $ExeUrl = "https://github.com/Wxyuz/App-Loader/releases/latest/download/loader.exe"
 $FileName = "loader.exe"
-$TempFolder = Join-Path $env:TEMP "App-Loader"
+$AppName = "App-Loader"
+
+$TempFolder = Join-Path $env:TEMP $AppName
 $OutFile = Join-Path $TempFolder $FileName
 
-Write-Host "====================================="
-Write-Host " App-Loader"
-Write-Host "====================================="
+Clear-Host
+
+Write-Host ""
+Write-Host "======================================"
+Write-Host "              App-Loader"
+Write-Host "======================================"
 Write-Host ""
 
 if (!(Test-Path $TempFolder)) {
     New-Item -ItemType Directory -Path $TempFolder | Out-Null
 }
 
-Write-Host "[1/3] Downloading loader.exe..."
-Write-Host "URL: $ExeUrl"
-Write-Host ""
+if (Test-Path $OutFile) {
+    Remove-Item $OutFile -Force
+}
 
 try {
-    Invoke-WebRequest -Uri $ExeUrl -OutFile $OutFile -UseBasicParsing
+    Write-Progress -Activity "App-Loader" -Status "กำลังเชื่อมต่อเซิร์ฟเวอร์..." -PercentComplete 5
+
+    $WebClient = New-Object System.Net.WebClient
+
+    $Global:DownloadComplete = $false
+    $Global:DownloadFailed = $false
+
+    Register-ObjectEvent -InputObject $WebClient -EventName DownloadProgressChanged -Action {
+        $percent = $EventArgs.ProgressPercentage
+
+        if ($percent -lt 0) {
+            $percent = 0
+        }
+
+        if ($percent -gt 100) {
+            $percent = 100
+        }
+
+        Write-Progress `
+            -Activity "App-Loader" `
+            -Status "กำลังดาวน์โหลด loader.exe... $percent%" `
+            -PercentComplete $percent
+    } | Out-Null
+
+    Register-ObjectEvent -InputObject $WebClient -EventName DownloadFileCompleted -Action {
+        if ($EventArgs.Error) {
+            $Global:DownloadFailed = $true
+        }
+
+        $Global:DownloadComplete = $true
+    } | Out-Null
+
+    $DownloadUri = New-Object System.Uri($ExeUrl)
+    $WebClient.DownloadFileAsync($DownloadUri, $OutFile)
+
+    while (-not $Global:DownloadComplete) {
+        Start-Sleep -Milliseconds 150
+    }
+
+    Write-Progress -Activity "App-Loader" -Completed
+
+    if ($Global:DownloadFailed) {
+        throw "ดาวน์โหลดไม่สำเร็จ"
+    }
 }
 catch {
-    Write-Host "Download failed."
+    Write-Progress -Activity "App-Loader" -Completed
+    Clear-Host
+    Write-Host ""
+    Write-Host "ดาวน์โหลดไม่สำเร็จ"
+    Write-Host ""
     Write-Host $_.Exception.Message
-    pause
+    Write-Host ""
+    Pause
     exit
 }
 
 if (!(Test-Path $OutFile)) {
-    Write-Host "File not found after download."
-    pause
+    Clear-Host
+    Write-Host ""
+    Write-Host "ไม่พบไฟล์ loader.exe หลังดาวน์โหลด"
+    Write-Host ""
+    Pause
     exit
 }
 
-Write-Host ""
-Write-Host "[2/3] Download completed."
-Write-Host "Saved to: $OutFile"
-Write-Host ""
-
-Write-Host "SHA256:"
-Get-FileHash -Path $OutFile -Algorithm SHA256
+Clear-Host
 
 Write-Host ""
-Write-Host "[3/3] Starting loader.exe..."
-Start-Process -FilePath $OutFile
-
+Write-Host "======================================"
+Write-Host "              App-Loader"
+Write-Host "======================================"
 Write-Host ""
-Write-Host "Done."
+Write-Host "ดาวน์โหลดเสร็จแล้ว"
+Write-Host ""
+Write-Host "ไฟล์:"
+Write-Host $OutFile
+Write-Host ""
+
+$RunConfirm = Read-Host "ต้องการเปิด loader.exe ตอนนี้ไหม? พิมพ์ Y แล้วกด Enter"
+
+if ($RunConfirm -eq "Y" -or $RunConfirm -eq "y") {
+    Clear-Host
+    Write-Host ""
+    Write-Host "กำลังเปิด loader.exe..."
+    Start-Sleep -Milliseconds 500
+
+    try {
+        Start-Process -FilePath $OutFile
+        Clear-Host
+        Write-Host ""
+        Write-Host "เปิดโปรแกรมแล้ว"
+        Write-Host ""
+    }
+    catch {
+        Clear-Host
+        Write-Host ""
+        Write-Host "เปิดโปรแกรมไม่สำเร็จ"
+        Write-Host ""
+        Write-Host $_.Exception.Message
+        Write-Host ""
+        Pause
+        exit
+    }
+}
+else {
+    Clear-Host
+    Write-Host ""
+    Write-Host "ยกเลิกการเปิดโปรแกรม"
+    Write-Host ""
+    Write-Host "ไฟล์ถูกดาวน์โหลดไว้ที่:"
+    Write-Host $OutFile
+    Write-Host ""
+}
