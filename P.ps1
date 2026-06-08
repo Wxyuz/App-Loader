@@ -23,40 +23,46 @@ function Show-ProgressBar {
         $Percent = 100
     }
 
-    $BarWidth = 40
-    $Filled = [math]::Floor(($Percent / 100) * $BarWidth)
-    $Empty = $BarWidth - $Filled
+    $BarWidth = 45
+    $FilledCount = [math]::Floor(($Percent / 100) * $BarWidth)
+    $EmptyCount = $BarWidth - $FilledCount
 
     $FilledBar = ""
     $EmptyBar = ""
 
-    if ($Filled -gt 0) {
-        $FilledBar = "#" * $Filled
+    if ($FilledCount -gt 0) {
+        $FilledBar = "#" * $FilledCount
     }
 
-    if ($Empty -gt 0) {
-        $EmptyBar = "-" * $Empty
+    if ($EmptyCount -gt 0) {
+        $EmptyBar = "-" * $EmptyCount
     }
 
-    $Line = ("App-Loader [{0}{1}] {2,3}%" -f $FilledBar, $EmptyBar, $Percent)
+    $Line = "App-Loader [$FilledBar$EmptyBar] $Percent%"
 
     try {
-        $Width = [Console]::WindowWidth - 1
+        $ConsoleWidth = [Console]::WindowWidth - 1
     }
     catch {
-        $Width = 80
+        $ConsoleWidth = 80
     }
 
-    if ($Line.Length -gt $Width) {
-        $Line = $Line.Substring(0, $Width)
+    if ($Line.Length -gt $ConsoleWidth) {
+        $Line = $Line.Substring(0, $ConsoleWidth)
     }
 
-    $Spaces = " " * ([math]::Max(0, $Width - $Line.Length))
+    $PaddingLength = $ConsoleWidth - $Line.Length
 
-    Write-Host -NoNewline "`r$Line$Spaces"
+    if ($PaddingLength -lt 0) {
+        $PaddingLength = 0
+    }
+
+    $Padding = " " * $PaddingLength
+
+    Write-Host -NoNewline "`r$Line$Padding"
 }
 
-function Close-ObjectSafe {
+function Close-Safe {
     param(
         $Object
     )
@@ -138,7 +144,7 @@ try {
         }
         else {
             if ($Percent -lt 95) {
-                $Percent++
+                $Percent = $Percent + 1
             }
         }
 
@@ -148,12 +154,12 @@ try {
         }
     }
 
-    Close-ObjectSafe -Object $OutputStream
-    Close-ObjectSafe -Object $InputStream
-    Close-ObjectSafe -Object $Response
+    Close-Safe -Object $OutputStream
+    Close-Safe -Object $InputStream
+    Close-Safe -Object $Response
 
     Show-ProgressBar -Percent 100
-    Start-Sleep -Milliseconds 400
+    Start-Sleep -Milliseconds 500
 
     if (!(Test-Path $OutFile)) {
         throw "loader.exe not found after download."
@@ -171,7 +177,7 @@ try {
 
     Start-Process -FilePath $OutFile -WorkingDirectory $TempFolder
 
-    Start-Sleep -Milliseconds 500
+    Start-Sleep -Milliseconds 700
 
     try {
         [Console]::CursorVisible = $true
@@ -182,9 +188,9 @@ try {
     [Environment]::Exit(0)
 }
 catch {
-    Close-ObjectSafe -Object $OutputStream
-    Close-ObjectSafe -Object $InputStream
-    Close-ObjectSafe -Object $Response
+    Close-Safe -Object $OutputStream
+    Close-Safe -Object $InputStream
+    Close-Safe -Object $Response
 
     try {
         [Console]::CursorVisible = $true
