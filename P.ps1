@@ -1,77 +1,139 @@
+$ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
+
+$AppName = "App-Loader"
 $ExeUrl = "https://github.com/Wxyuz/App-Loader/releases/latest/download/loader.exe"
 $FileName = "loader.exe"
-$AppName = "App-Loader"
 
 $TempFolder = Join-Path $env:TEMP $AppName
 $OutFile = Join-Path $TempFolder $FileName
 
-Clear-Host
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-Write-Host ""
-Write-Host "======================================"
-Write-Host "              App-Loader"
-Write-Host "======================================"
-Write-Host ""
+function Show-LoadingBar {
+    param(
+        [int]$Percent,
+        [string]$Text
+    )
+
+    if ($Percent -lt 0) {
+        $Percent = 0
+    }
+
+    if ($Percent -gt 100) {
+        $Percent = 100
+    }
+
+    $BarSize = 35
+    $FilledSize = [math]::Floor(($Percent / 100) * $BarSize)
+    $EmptySize = $BarSize - $FilledSize
+
+    $FilledBar = ""
+    $EmptyBar = ""
+
+    if ($FilledSize -gt 0) {
+        $FilledBar = "█" * $FilledSize
+    }
+
+    if ($EmptySize -gt 0) {
+        $EmptyBar = "░" * $EmptySize
+    }
+
+    Write-Host -NoNewline "`r$Text [$FilledBar$EmptyBar] $Percent%"
+}
+
+function Close-AllStreams {
+    param(
+        $ResponseStream,
+        $FileStream,
+        $Response
+    )
+
+    if ($ResponseStream -ne $null) {
+        $ResponseStream.Close()
+        $ResponseStream.Dispose()
+    }
+
+    if ($FileStream -ne $null) {
+        $FileStream.Close()
+        $FileStream.Dispose()
+    }
+
+    if ($Response -ne $null) {
+        $Response.Close()
+        $Response.Dispose()
+    }
+}
+
+Clear-Host
+$Host.UI.RawUI.WindowTitle = "App-Loader"
 
 if (!(Test-Path $TempFolder)) {
     New-Item -ItemType Directory -Path $TempFolder | Out-Null
 }
 
 if (Test-Path $OutFile) {
-    Remove-Item $OutFile -Force
+    Remove-Item -Path $OutFile -Force
 }
+
+$Response = $null
+$ResponseStream = $null
+$FileStream = $null
 
 try {
-    Write-Progress -Activity "App-Loader" -Status "กำลังเชื่อมต่อเซิร์ฟเวอร์..." -PercentComplete 5
+    Show-LoadingBar -Percent 0 -Text "Loading"
 
-    $WebClient = New-Object System.Net.WebClient
+    $Request = [System.Net.HttpWebRequest]::Create($ExeUrl)
+    $Request.Method = "GET"
+    $Request.AllowAutoRedirect = $true
+    $Request.UserAgent = "App-Loader"
+    $Request.Timeout = 30000
+    $Request.ReadWriteTimeout = 30000
 
-    $Global:DownloadComplete = $false
-    $Global:DownloadFailed = $false
+    $Response = $Request.GetResponse()
+    $TotalBytes = $Response.ContentLength
 
-    Register-ObjectEvent -InputObject $WebClient -EventName DownloadProgressChanged -Action {
-        $percent = $EventArgs.ProgressPercentage
+    $ResponseStream = $Response.GetResponseStream()
+    $FileStream = [System.IO.File]::Create($OutFile)
 
-        if ($percent -lt 0) {
-            $percent = 0
+    $Buffer = New-Object byte[] 81920
+    $TotalRead = 0
+    $LastPercent = -1
+
+    while ($true) {
+        $Read = $ResponseStream.Read($Buffer, 0, $Buffer.Length)
+
+        if ($Read -le 0) {
+            break
         }
 
-        if ($percent -gt 100) {
-            $percent = 100
+        $FileStream.Write($Buffer, 0, $Read)
+        $TotalRead += $Read
+
+        if ($TotalBytes -gt 0) {
+            $Percent = [int](($TotalRead / $TotalBytes) * 100)
+        }
+        else {
+            $Percent = ($Percent + 3) % 100
         }
 
-        Write-Progress `
-            -Activity "App-Loader" `
-            -Status "กำลังดาวน์โหลด loader.exe... $percent%" `
-            -PercentComplete $percent
-    } | Out-Null
-
-    Register-ObjectEvent -InputObject $WebClient -EventName DownloadFileCompleted -Action {
-        if ($EventArgs.Error) {
-            $Global:DownloadFailed = $true
+        if ($Percent -ne $LastPercent) {
+            Show-LoadingBar -Percent $Percent -Text "Loading"
+            $LastPercent = $Percent
         }
-
-        $Global:DownloadComplete = $true
-    } | Out-Null
-
-    $DownloadUri = New-Object System.Uri($ExeUrl)
-    $WebClient.DownloadFileAsync($DownloadUri, $OutFile)
-
-    while (-not $Global:DownloadComplete) {
-        Start-Sleep -Milliseconds 150
     }
 
-    Write-Progress -Activity "App-Loader" -Completed
+    Close-AllStreams -ResponseStream $ResponseStream -FileStream $FileStream -Response $Response
 
-    if ($Global:DownloadFailed) {
-        throw "ดาวน์โหลดไม่สำเร็จ"
-    }
+    Show-LoadingBar -Percent 100 -Text "Loading"
+    Start-Sleep -Milliseconds 500
 }
 catch {
-    Write-Progress -Activity "App-Loader" -Completed
+    Close-AllStreams -ResponseStream $ResponseStream -FileStream $FileStream -Response $Response
+
     Clear-Host
     Write-Host ""
-    Write-Host "ดาวน์โหลดไม่สำเร็จ"
+    Write-Host "Download failed"
     Write-Host ""
     Write-Host $_.Exception.Message
     Write-Host ""
@@ -82,57 +144,40 @@ catch {
 if (!(Test-Path $OutFile)) {
     Clear-Host
     Write-Host ""
-    Write-Host "ไม่พบไฟล์ loader.exe หลังดาวน์โหลด"
+    Write-Host "loader.exe not found"
     Write-Host ""
     Pause
     exit
 }
 
-Clear-Host
+$FileInfo = Get-Item $OutFile
 
-Write-Host ""
-Write-Host "======================================"
-Write-Host "              App-Loader"
-Write-Host "======================================"
-Write-Host ""
-Write-Host "ดาวน์โหลดเสร็จแล้ว"
-Write-Host ""
-Write-Host "ไฟล์:"
-Write-Host $OutFile
-Write-Host ""
-
-$RunConfirm = Read-Host "ต้องการเปิด loader.exe ตอนนี้ไหม? พิมพ์ Y แล้วกด Enter"
-
-if ($RunConfirm -eq "Y" -or $RunConfirm -eq "y") {
+if ($FileInfo.Length -le 0) {
     Clear-Host
     Write-Host ""
-    Write-Host "กำลังเปิด loader.exe..."
-    Start-Sleep -Milliseconds 500
-
-    try {
-        Start-Process -FilePath $OutFile
-        Clear-Host
-        Write-Host ""
-        Write-Host "เปิดโปรแกรมแล้ว"
-        Write-Host ""
-    }
-    catch {
-        Clear-Host
-        Write-Host ""
-        Write-Host "เปิดโปรแกรมไม่สำเร็จ"
-        Write-Host ""
-        Write-Host $_.Exception.Message
-        Write-Host ""
-        Pause
-        exit
-    }
+    Write-Host "loader.exe is empty"
+    Write-Host ""
+    Pause
+    exit
 }
-else {
+
+try {
+    Clear-Host
+    Show-LoadingBar -Percent 100 -Text "Ready"
+    Start-Sleep -Milliseconds 300
+
+    Start-Process -FilePath $OutFile -WorkingDirectory $TempFolder
+
+    Start-Sleep -Milliseconds 700
+    exit
+}
+catch {
     Clear-Host
     Write-Host ""
-    Write-Host "ยกเลิกการเปิดโปรแกรม"
+    Write-Host "Cannot start loader.exe"
     Write-Host ""
-    Write-Host "ไฟล์ถูกดาวน์โหลดไว้ที่:"
-    Write-Host $OutFile
+    Write-Host $_.Exception.Message
     Write-Host ""
+    Pause
+    exit
 }
