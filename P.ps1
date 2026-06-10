@@ -8,18 +8,10 @@ $ExeDownloadUrl = "https://github.com/Wxyuz/App-Loader/releases/download/v1.0/lo
 $InstallFolder = Join-Path $env:LOCALAPPDATA "GODPROJECTH"
 $ExePath = Join-Path $InstallFolder $ExeName
 
-function Write-Ok($Text) {
+function Step($Text) {
     Write-Host "$Text " -NoNewline -ForegroundColor Cyan
     Start-Sleep -Milliseconds 350
     Write-Host "DONE" -ForegroundColor Green
-}
-
-function Write-Fail($Text) {
-    Write-Host ""
-    Write-Host "[FAIL] $Text" -ForegroundColor Red
-    Write-Host ""
-    pause
-    exit
 }
 
 function Progress($Text) {
@@ -74,24 +66,24 @@ function Download-Loader {
         Write-Host "[FAIL] โหลด loader.exe ไม่สำเร็จ" -ForegroundColor Red
         Write-Host $_.Exception.Message -ForegroundColor Yellow
         Write-Host ""
-        Write-Host "วิธีแก้:" -ForegroundColor Cyan
-        Write-Host "1. ไปที่ GitHub > Releases"
-        Write-Host "2. สร้าง Release ชื่อ v1.0"
-        Write-Host "3. อัปโหลด loader.exe เป็น Asset"
-        Write-Host "4. ใช้ลิงก์แบบ releases/download/v1.0/loader.exe"
+        Write-Host "สาเหตุ: ยังไม่ได้อัป loader.exe ไปที่ GitHub Releases หรือ tag ไม่ใช่ v1.0" -ForegroundColor Cyan
         pause
         exit
     }
 
     if (!(Test-Path $ExePath)) {
-        Write-Fail "โหลดแล้วแต่ไม่พบไฟล์ loader.exe"
+        Write-Host "[FAIL] โหลดแล้วแต่ไม่พบไฟล์" -ForegroundColor Red
+        pause
+        exit
     }
 
     $Size = (Get-Item $ExePath).Length
 
     if ($Size -lt 100000) {
         Remove-Item $ExePath -Force -ErrorAction SilentlyContinue
-        Write-Fail "ไฟล์ที่โหลดมาเล็กผิดปกติ ลิงก์อาจไม่ใช่ไฟล์ .exe จริง"
+        Write-Host "[FAIL] ไฟล์ที่โหลดมาเล็กผิดปกติ ลิงก์ไม่ใช่ .exe จริง" -ForegroundColor Red
+        pause
+        exit
     }
 
     Write-Host "[+] Download complete" -ForegroundColor Green
@@ -109,23 +101,14 @@ function Start-Loader {
     Write-Host ""
     Write-Host "[+] Opening loader.exe..." -ForegroundColor Green
 
-    try {
-        Start-Process -FilePath $ExePath -WorkingDirectory $InstallFolder
-        exit
-    }
-    catch {
-        Write-Host ""
-        Write-Host "[FAIL] เปิด loader.exe ไม่ได้" -ForegroundColor Red
-        Write-Host $_.Exception.Message -ForegroundColor Yellow
-        pause
-        exit
-    }
+    Start-Process -FilePath $ExePath -WorkingDirectory $InstallFolder
+    exit
 }
 
 Show-Logo
-Write-Ok "Checking system"
-Write-Ok "Loading protected modules"
-Write-Ok "Preparing GUI session"
+Step "Checking system"
+Step "Loading protected modules"
+Step "Preparing GUI session"
 
 Prepare-Folder
 Progress "Checking loader.exe"
