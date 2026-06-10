@@ -3,18 +3,39 @@ $ErrorActionPreference = "Stop"
 $Host.UI.RawUI.WindowTitle = ">>==<< GODPROJECTH LOADER >>==<<"
 
 $ExeName = "loader.exe"
+
+# ต้องเป็นลิงก์ GitHub Releases เท่านั้น
 $ExeDownloadUrl = "https://github.com/Wxyuz/App-Loader/releases/download/v1.0/loader.exe"
 
 $InstallFolder = Join-Path $env:LOCALAPPDATA "GODPROJECTH"
 $ExePath = Join-Path $InstallFolder $ExeName
 
-function Step($Text) {
+function Show-Logo {
+    Clear-Host
+    Write-Host "============================================================" -ForegroundColor Cyan
+    Write-Host " ██████╗  ██████╗ ██████╗ ██████╗ ██████╗ " -ForegroundColor Yellow
+    Write-Host "██╔════╝ ██╔═══██╗██╔══██╗██╔══██╗██╔══██╗" -ForegroundColor Yellow
+    Write-Host "██║  ███╗██║   ██║██║  ██║██████╔╝██████╔╝" -ForegroundColor Yellow
+    Write-Host "██║   ██║██║   ██║██║  ██║██╔═══╝ ██╔══██╗" -ForegroundColor Yellow
+    Write-Host "╚██████╔╝╚██████╔╝██████╔╝██║     ██║  ██║" -ForegroundColor Yellow
+    Write-Host " ╚═════╝  ╚═════╝ ╚═════╝ ╚═╝     ╚═╝  ╚═╝" -ForegroundColor Yellow
+    Write-Host "GODPROJECTH SECURE POWERSHELL LOADER" -ForegroundColor Green
+    Write-Host "LOADING DATA PLEASE WAIT" -ForegroundColor White
+    Write-Host "============================================================" -ForegroundColor Cyan
+    Write-Host ""
+}
+
+function Step {
+    param([string]$Text)
+
     Write-Host "$Text " -NoNewline -ForegroundColor Cyan
     Start-Sleep -Milliseconds 350
     Write-Host "DONE" -ForegroundColor Green
 }
 
-function Progress($Text) {
+function Progress {
+    param([string]$Text)
+
     Write-Host ""
     Write-Host "$Text" -ForegroundColor Cyan
     Write-Host "[" -NoNewline -ForegroundColor DarkGray
@@ -25,21 +46,6 @@ function Progress($Text) {
     }
 
     Write-Host "] OK" -ForegroundColor Green
-}
-
-function Show-Logo {
-    Clear-Host
-    Write-Host "============================================================" -ForegroundColor Cyan
-    Write-Host " ██████╗  ██████╗ ██████╗ ██████╗ ██████╗  ██████╗ " -ForegroundColor Yellow
-    Write-Host "██╔════╝ ██╔═══██╗██╔══██╗██╔══██╗██╔══██╗██╔═══██╗" -ForegroundColor Yellow
-    Write-Host "██║  ███╗██║   ██║██║  ██║██████╔╝██████╔╝██║   ██║" -ForegroundColor Yellow
-    Write-Host "██║   ██║██║   ██║██║  ██║██╔═══╝ ██╔══██╗██║   ██║" -ForegroundColor Yellow
-    Write-Host "╚██████╔╝╚██████╔╝██████╔╝██║     ██║  ██║╚██████╔╝" -ForegroundColor Yellow
-    Write-Host " ╚═════╝  ╚═════╝ ╚═════╝ ╚═╝     ╚═╝  ╚═╝ ╚═════╝ " -ForegroundColor Yellow
-    Write-Host "GODPROJECTH SECURE POWERSHELL LOADER" -ForegroundColor Green
-    Write-Host "LOADING DATA PLEASE WAIT" -ForegroundColor White
-    Write-Host "============================================================" -ForegroundColor Cyan
-    Write-Host ""
 }
 
 function Prepare-Folder {
@@ -54,42 +60,36 @@ function Download-Loader {
     Write-Host "[+] Downloading loader.exe..." -ForegroundColor Cyan
     Write-Host "URL: $ExeDownloadUrl" -ForegroundColor Yellow
 
-    try {
-        Invoke-WebRequest `
-            -Uri $ExeDownloadUrl `
-            -OutFile $ExePath `
-            -UseBasicParsing `
-            -TimeoutSec 120
+    if (Test-Path $ExePath) {
+        Remove-Item $ExePath -Force
     }
-    catch {
-        Write-Host ""
-        Write-Host "[FAIL] โหลด loader.exe ไม่สำเร็จ" -ForegroundColor Red
-        Write-Host $_.Exception.Message -ForegroundColor Yellow
-        Write-Host ""
-        Write-Host "สาเหตุ: ยังไม่ได้อัป loader.exe ไปที่ GitHub Releases หรือ tag ไม่ใช่ v1.0" -ForegroundColor Cyan
-        pause
-        exit
-    }
+
+    Invoke-WebRequest `
+        -Uri $ExeDownloadUrl `
+        -OutFile $ExePath `
+        -UseBasicParsing `
+        -TimeoutSec 120
 
     if (!(Test-Path $ExePath)) {
-        Write-Host "[FAIL] โหลดแล้วแต่ไม่พบไฟล์" -ForegroundColor Red
-        pause
-        exit
+        throw "Download failed: file not found after download"
     }
 
-    $Size = (Get-Item $ExePath).Length
+    $Bytes = [System.IO.File]::ReadAllBytes($ExePath)
 
-    if ($Size -lt 100000) {
-        Remove-Item $ExePath -Force -ErrorAction SilentlyContinue
-        Write-Host "[FAIL] ไฟล์ที่โหลดมาเล็กผิดปกติ ลิงก์ไม่ใช่ .exe จริง" -ForegroundColor Red
-        pause
-        exit
+    if ($Bytes.Length -lt 100000) {
+        Remove-Item $ExePath -Force
+        throw "Downloaded file too small. URL is not real loader.exe"
+    }
+
+    if ($Bytes[0] -ne 77 -or $Bytes[1] -ne 90) {
+        Remove-Item $ExePath -Force
+        throw "Downloaded file is not EXE. Must start with MZ header"
     }
 
     Write-Host "[+] Download complete" -ForegroundColor Green
 }
 
-function Start-Loader {
+function Start-GUI {
     if (!(Test-Path $ExePath)) {
         Download-Loader
     }
@@ -99,18 +99,41 @@ function Start-Loader {
     Progress "Preparing launch environment"
 
     Write-Host ""
+    Write-Host "[+] Loading complete" -ForegroundColor Green
     Write-Host "[+] Opening loader.exe..." -ForegroundColor Green
 
+    Start-Sleep -Milliseconds 800
+
     Start-Process -FilePath $ExePath -WorkingDirectory $InstallFolder
+
+    Start-Sleep -Milliseconds 500
     exit
 }
 
-Show-Logo
-Step "Checking system"
-Step "Loading protected modules"
-Step "Preparing GUI session"
+try {
+    Show-Logo
 
-Prepare-Folder
-Progress "Checking loader.exe"
+    Step "Checking system"
+    Step "Loading protected modules"
+    Step "Preparing GUI session"
 
-Start-Loader
+    Prepare-Folder
+
+    Progress "Checking loader.exe"
+
+    Start-GUI
+}
+catch {
+    Write-Host ""
+    Write-Host "[FAIL] ERROR" -ForegroundColor Red
+    Write-Host $_.Exception.Message -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "วิธีแก้:" -ForegroundColor Cyan
+    Write-Host "1. อัป loader.exe ไปที่ GitHub Releases"
+    Write-Host "2. ตั้ง tag เป็น v1.0"
+    Write-Host "3. ลิงก์ต้องเป็น releases/download/v1.0/loader.exe"
+    Write-Host "4. อัปเดตไฟล์ P.ps1 บน GitHub ให้เป็นโค้ดใหม่นี้"
+    Write-Host ""
+    pause
+    exit
+}
