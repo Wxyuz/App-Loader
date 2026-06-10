@@ -2,13 +2,31 @@ $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
 $AppName = "App-Loader"
+$ScriptVersion = "NO-KEYAUTH-BLOCK-V901"
+
 $ExeUrl = "https://github.com/Wxyuz/App-Loader/releases/latest/download/loader.exe"
+$GitHubTestUrl = "https://github.com"
+$KeyAuthInfoUrl = "https://keyauth.win/api/1.3/"
 $FileName = "loader.exe"
 
 $TempFolder = Join-Path $env:TEMP $AppName
 $OutFile = Join-Path $TempFolder $FileName
+$LogFile = Join-Path $TempFolder "launcher-log.txt"
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+function Write-Log {
+    param(
+        [string]$Text
+    )
+
+    try {
+        $Time = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        Add-Content -Path $LogFile -Value "[$Time] $Text" -Encoding UTF8
+    }
+    catch {
+    }
+}
 
 function Set-ConsoleReady {
     try {
@@ -71,30 +89,6 @@ function Write-Centered {
     Write-Host "$LeftPadding$Text" -ForegroundColor $ForegroundColor
 }
 
-function Write-CenteredNoNewline {
-    param(
-        [string]$Text,
-        [string]$ForegroundColor = "White"
-    )
-
-    $Width = Get-ConsoleWidthSafe
-
-    if ($Text.Length -ge $Width) {
-        Write-Host -NoNewline $Text -ForegroundColor $ForegroundColor
-        return
-    }
-
-    $LeftPaddingCount = [math]::Floor(($Width - $Text.Length) / 2)
-
-    if ($LeftPaddingCount -lt 0) {
-        $LeftPaddingCount = 0
-    }
-
-    $LeftPadding = " " * $LeftPaddingCount
-
-    Write-Host -NoNewline "$LeftPadding$Text" -ForegroundColor $ForegroundColor
-}
-
 function Write-YellowBlock {
     Write-Host -NoNewline "  " -BackgroundColor Yellow
 }
@@ -105,7 +99,8 @@ function Write-EmptyBlock {
 
 function Show-PixelLoading {
     param(
-        [int]$Percent
+        [int]$Percent,
+        [string]$StatusText
     )
 
     if ($Percent -lt 0) {
@@ -145,8 +140,8 @@ function Show-PixelLoading {
     Write-Host -NoNewline "$LeftPadding|" -ForegroundColor White
     Write-Host -NoNewline " "
 
-    for ($i = 1; $i -le $TotalBlocks; $i++) {
-        if ($i -le $FilledBlocks) {
+    for ($Index = 1; $Index -le $TotalBlocks; $Index++) {
+        if ($Index -le $FilledBlocks) {
             Write-YellowBlock
         }
         else {
@@ -161,6 +156,11 @@ function Show-PixelLoading {
     Write-Host ""
 
     Write-Centered "$Percent%" "Yellow"
+    Write-Host ""
+
+    if ($null -ne $StatusText -and $StatusText.Trim() -ne "") {
+        Write-Centered $StatusText "White"
+    }
 }
 
 function Close-Safe {
@@ -180,6 +180,150 @@ function Close-Safe {
         }
         catch {
         }
+    }
+}
+
+function Show-ErrorMessage {
+    param(
+        [string]$Message
+    )
+
+    Restore-Console
+
+    try {
+        Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
+
+        [System.Windows.Forms.MessageBox]::Show(
+            $Message,
+            "$AppName Error",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Error
+        ) | Out-Null
+    }
+    catch {
+        Clear-Host
+        Write-Host ""
+        Write-Host "$AppName Error" -ForegroundColor Red
+        Write-Host ""
+        Write-Host $Message -ForegroundColor White
+        Write-Host ""
+        Start-Sleep -Seconds 7
+    }
+}
+
+function Show-WarningMessage {
+    param(
+        [string]$Message
+    )
+
+    try {
+        Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
+
+        [System.Windows.Forms.MessageBox]::Show(
+            $Message,
+            "$AppName Warning",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Warning
+        ) | Out-Null
+    }
+    catch {
+    }
+}
+
+function Close-ThisPowerShell {
+    Restore-Console
+
+    Start-Sleep -Milliseconds 300
+
+    try {
+        Stop-Process -Id $PID -Force
+    }
+    catch {
+        exit
+    }
+}
+
+function Test-UrlConnection {
+    param(
+        [string]$Url,
+        [int]$TimeoutMilliseconds
+    )
+
+    $Request = $null
+    $Response = $null
+
+    try {
+        $Request = [System.Net.HttpWebRequest]::Create($Url)
+        $Request.Method = "GET"
+        $Request.UserAgent = "Mozilla/5.0 App-Loader"
+        $Request.AllowAutoRedirect = $true
+        $Request.Timeout = $TimeoutMilliseconds
+        $Request.ReadWriteTimeout = $TimeoutMilliseconds
+
+        $Response = $Request.GetResponse()
+
+        if ($null -ne $Response) {
+            Close-Safe -Object $Response
+            return $true
+        }
+
+        return $false
+    }
+    catch {
+        Write-Log "Test-UrlConnection failed: $Url"
+        Write-Log $_.Exception.Message
+        Close-Safe -Object $Response
+        return $false
+    }
+}
+
+function Test-TcpPort {
+    param(
+        [string]$HostName,
+        [int]$Port,
+        [int]$TimeoutMilliseconds
+    )
+
+    $Client = $null
+
+    try {
+        $Client = New-Object System.Net.Sockets.TcpClient
+        $AsyncResult = $Client.BeginConnect($HostName, $Port, $null, $null)
+        $Success = $AsyncResult.AsyncWaitHandle.WaitOne($TimeoutMilliseconds, $false)
+
+        if ($Success -ne $true) {
+            try {
+                $Client.Close()
+            }
+            catch {
+            }
+
+            return $false
+        }
+
+        $Client.EndConnect($AsyncResult)
+
+        try {
+            $Client.Close()
+        }
+        catch {
+        }
+
+        return $true
+    }
+    catch {
+        Write-Log "Test-TcpPort failed: $HostName $Port"
+        Write-Log $_.Exception.Message
+
+        try {
+            if ($null -ne $Client) {
+                $Client.Close()
+            }
+        }
+        catch {
+        }
+
+        return $false
     }
 }
 
@@ -213,6 +357,8 @@ function Test-ExeFile {
         return $false
     }
     catch {
+        Write-Log "Test-ExeFile failed"
+        Write-Log $_.Exception.Message
         return $false
     }
     finally {
@@ -220,47 +366,6 @@ function Test-ExeFile {
             $FileStream.Close()
             $FileStream.Dispose()
         }
-    }
-}
-
-function Show-ErrorMessage {
-    param(
-        [string]$Message
-    )
-
-    Restore-Console
-    Clear-Host
-
-    try {
-        Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
-
-        [System.Windows.Forms.MessageBox]::Show(
-            $Message,
-            "$AppName Error",
-            [System.Windows.Forms.MessageBoxButtons]::OK,
-            [System.Windows.Forms.MessageBoxIcon]::Error
-        ) | Out-Null
-    }
-    catch {
-        Write-Host ""
-        Write-Host "$AppName Error" -ForegroundColor Red
-        Write-Host ""
-        Write-Host $Message -ForegroundColor White
-        Write-Host ""
-        Start-Sleep -Seconds 6
-    }
-}
-
-function Close-ThisPowerShell {
-    Restore-Console
-
-    Start-Sleep -Milliseconds 300
-
-    try {
-        Stop-Process -Id $PID -Force
-    }
-    catch {
-        exit
     }
 }
 
@@ -275,7 +380,7 @@ function Download-FileWithPixelBar {
     $OutputStream = $null
 
     try {
-        Show-PixelLoading -Percent 0
+        Show-PixelLoading -Percent 0 -StatusText "Preparing download"
 
         $Request = [System.Net.HttpWebRequest]::Create($Url)
         $Request.Method = "GET"
@@ -319,7 +424,7 @@ function Download-FileWithPixelBar {
             $Elapsed = ($Now - $LastDrawTime).TotalMilliseconds
 
             if (($Percent -ne $LastPercent) -and ($Elapsed -ge 80)) {
-                Show-PixelLoading -Percent $Percent
+                Show-PixelLoading -Percent $Percent -StatusText "Downloading loader.exe"
                 $LastPercent = $Percent
                 $LastDrawTime = $Now
             }
@@ -329,13 +434,16 @@ function Download-FileWithPixelBar {
         Close-Safe -Object $InputStream
         Close-Safe -Object $Response
 
-        Show-PixelLoading -Percent 100
+        Show-PixelLoading -Percent 100 -StatusText "Download complete"
         Start-Sleep -Milliseconds 500
     }
     catch {
         Close-Safe -Object $OutputStream
         Close-Safe -Object $InputStream
         Close-Safe -Object $Response
+
+        Write-Log "Download failed"
+        Write-Log $_.Exception.Message
 
         throw $_
     }
@@ -348,6 +456,35 @@ try {
         New-Item -ItemType Directory -Path $TempFolder | Out-Null
     }
 
+    if (Test-Path $LogFile) {
+        Remove-Item -Path $LogFile -Force
+    }
+
+    Write-Log "Script started"
+    Write-Log "Script version: $ScriptVersion"
+
+    Show-PixelLoading -Percent 5 -StatusText "Checking GitHub"
+
+    $GitHubOK = Test-UrlConnection -Url $GitHubTestUrl -TimeoutMilliseconds 8000
+
+    if ($GitHubOK -ne $true) {
+        throw "เครื่องนี้เข้า GitHub ไม่ได้ หรือเน็ต/Firewall/Antivirus/VPN/Proxy บล็อก GitHub อยู่ ให้ลองเปลี่ยน Wi-Fi หรืออนุญาต GitHub ก่อน"
+    }
+
+    Show-PixelLoading -Percent 12 -StatusText "Checking network"
+
+    $KeyAuthTcpOK = Test-TcpPort -HostName "keyauth.win" -Port 443 -TimeoutMilliseconds 5000
+
+    if ($KeyAuthTcpOK -ne $true) {
+        Write-Log "Warning: keyauth.win:443 is not reachable from this machine"
+
+        Show-WarningMessage -Message "เครื่องนี้อาจติดต่อ keyauth.win:443 ไม่ได้ ถ้า GUI ขึ้น KeyAuth Network Error หลังเปิด แปลว่าปัญหาอยู่ที่ network หรือ source ของ loader.exe ไม่ใช่ PowerShell"
+    }
+
+    if (!(Test-Path $TempFolder)) {
+        New-Item -ItemType Directory -Path $TempFolder | Out-Null
+    }
+
     if (Test-Path $OutFile) {
         Remove-Item -Path $OutFile -Force
     }
@@ -355,17 +492,17 @@ try {
     Download-FileWithPixelBar -Url $ExeUrl -Destination $OutFile
 
     if (!(Test-Path $OutFile)) {
-        throw "Download completed, but loader.exe was not found."
+        throw "Download completed, but loader.exe was not found"
     }
 
     $DownloadedFile = Get-Item $OutFile
 
     if ($DownloadedFile.Length -le 0) {
-        throw "Downloaded loader.exe is empty."
+        throw "Downloaded loader.exe is empty"
     }
 
     if (!(Test-ExeFile -Path $OutFile)) {
-        throw "Downloaded file is not a valid EXE. Check GitHub Release. The asset file must be named loader.exe."
+        throw "Downloaded file is not a valid EXE. Check GitHub Release. The asset file must be named loader.exe"
     }
 
     try {
@@ -374,8 +511,8 @@ try {
     catch {
     }
 
-    Show-PixelLoading -Percent 100
-    Start-Sleep -Milliseconds 400
+    Show-PixelLoading -Percent 100 -StatusText "Starting GUI"
+    Start-Sleep -Milliseconds 500
 
     $ProcessInfo = New-Object System.Diagnostics.ProcessStartInfo
     $ProcessInfo.FileName = $OutFile
@@ -386,15 +523,27 @@ try {
     $StartedProcess = [System.Diagnostics.Process]::Start($ProcessInfo)
 
     if ($null -eq $StartedProcess) {
-        throw "Cannot start loader.exe."
+        throw "Cannot start loader.exe"
     }
 
-    Start-Sleep -Milliseconds 900
+    Write-Log "loader.exe started"
+    Write-Log "Path: $OutFile"
+
+    Start-Sleep -Milliseconds 1500
+
+    if ($StartedProcess.HasExited) {
+        $ExitCode = $StartedProcess.ExitCode
+
+        throw "loader.exe เปิดแล้วปิดทันที Exit code: $ExitCode ถ้าเป็น .NET ให้ publish แบบ self-contained ถ้าเป็น Python ให้ build แบบ --windowed และใส่ไฟล์ประกอบให้ครบ"
+    }
 
     Close-ThisPowerShell
 }
 catch {
     $ErrorMessage = $_.Exception.Message
+
+    Write-Log "Fatal error"
+    Write-Log $ErrorMessage
 
     Show-ErrorMessage -Message $ErrorMessage
 
