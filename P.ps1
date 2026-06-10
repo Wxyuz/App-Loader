@@ -10,7 +10,7 @@ $OutFile = Join-Path $TempFolder $FileName
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-function Set-SafeConsole {
+function Set-ConsoleReady {
     try {
         $Host.UI.RawUI.WindowTitle = $AppName
     }
@@ -24,41 +24,13 @@ function Set-SafeConsole {
     }
 
     try {
-        $RawUI = $Host.UI.RawUI
-        $WindowSize = $RawUI.WindowSize
-
-        if ($WindowSize.Width -lt 80) {
-            $WindowSize.Width = 80
-        }
-
-        if ($WindowSize.Height -lt 22) {
-            $WindowSize.Height = 22
-        }
-
-        $RawUI.WindowSize = $WindowSize
-    }
-    catch {
-    }
-
-    try {
-        $RawUI = $Host.UI.RawUI
-        $BufferSize = $RawUI.BufferSize
-
-        if ($BufferSize.Width -lt 80) {
-            $BufferSize.Width = 80
-        }
-
-        if ($BufferSize.Height -lt 300) {
-            $BufferSize.Height = 300
-        }
-
-        $RawUI.BufferSize = $BufferSize
+        Clear-Host
     }
     catch {
     }
 }
 
-function Reset-SafeConsole {
+function Restore-Console {
     try {
         [Console]::CursorVisible = $true
     }
@@ -66,49 +38,72 @@ function Reset-SafeConsole {
     }
 }
 
-function Write-CenterText {
-    param(
-        [string]$Text,
-        [string]$Color = "White"
-    )
-
+function Get-ConsoleWidthSafe {
     try {
-        $Width = [Console]::WindowWidth
+        return [Console]::WindowWidth
     }
     catch {
-        $Width = 80
+        return 80
     }
+}
+
+function Write-Centered {
+    param(
+        [string]$Text,
+        [string]$ForegroundColor = "White"
+    )
+
+    $Width = Get-ConsoleWidthSafe
 
     if ($Text.Length -ge $Width) {
-        Write-Host $Text -ForegroundColor $Color
+        Write-Host $Text -ForegroundColor $ForegroundColor
         return
     }
 
-    $Left = [math]::Floor(($Width - $Text.Length) / 2)
+    $LeftPaddingCount = [math]::Floor(($Width - $Text.Length) / 2)
 
-    if ($Left -lt 0) {
-        $Left = 0
+    if ($LeftPaddingCount -lt 0) {
+        $LeftPaddingCount = 0
     }
 
-    $Padding = " " * $Left
+    $LeftPadding = " " * $LeftPaddingCount
 
-    Write-Host "$Padding$Text" -ForegroundColor $Color
+    Write-Host "$LeftPadding$Text" -ForegroundColor $ForegroundColor
 }
 
-function Write-PixelBlock {
+function Write-CenteredNoNewline {
     param(
-        [bool]$Filled
+        [string]$Text,
+        [string]$ForegroundColor = "White"
     )
 
-    if ($Filled) {
-        Write-Host -NoNewline "  " -BackgroundColor Yellow
+    $Width = Get-ConsoleWidthSafe
+
+    if ($Text.Length -ge $Width) {
+        Write-Host -NoNewline $Text -ForegroundColor $ForegroundColor
+        return
     }
-    else {
-        Write-Host -NoNewline "  " -BackgroundColor Black
+
+    $LeftPaddingCount = [math]::Floor(($Width - $Text.Length) / 2)
+
+    if ($LeftPaddingCount -lt 0) {
+        $LeftPaddingCount = 0
     }
+
+    $LeftPadding = " " * $LeftPaddingCount
+
+    Write-Host -NoNewline "$LeftPadding$Text" -ForegroundColor $ForegroundColor
 }
 
-function Show-PixelLoadingBar {
+function Write-YellowBlock {
+    Write-Host -NoNewline "  " -BackgroundColor Yellow
+}
+
+function Write-EmptyBlock {
+    Write-Host -NoNewline "  " -BackgroundColor Black
+}
+
+function Show-PixelLoading {
     param(
         [int]$Percent
     )
@@ -123,26 +118,16 @@ function Show-PixelLoadingBar {
 
     Clear-Host
 
-    Write-Host ""
-    Write-Host ""
-    Write-CenterText "LOADING..." "Yellow"
-    Write-Host ""
-
-    $TotalBlocks = 24
+    $TotalBlocks = 18
     $FilledBlocks = [math]::Floor(($Percent / 100) * $TotalBlocks)
 
-    $BarInnerWidth = $TotalBlocks * 2
-    $TopBorder = "+" + ("-" * ($BarInnerWidth + 2)) + "+"
-    $BottomBorder = "+" + ("-" * ($BarInnerWidth + 2)) + "+"
+    $InnerWidth = ($TotalBlocks * 2) + 2
+    $TopBorder = "+" + ("-" * $InnerWidth) + "+"
+    $BottomBorder = "+" + ("-" * $InnerWidth) + "+"
 
-    try {
-        $ConsoleWidth = [Console]::WindowWidth
-    }
-    catch {
-        $ConsoleWidth = 80
-    }
-
-    $LeftPaddingCount = [math]::Floor(($ConsoleWidth - $TopBorder.Length) / 2)
+    $ConsoleWidth = Get-ConsoleWidthSafe
+    $BarWidth = $TopBorder.Length
+    $LeftPaddingCount = [math]::Floor(($ConsoleWidth - $BarWidth) / 2)
 
     if ($LeftPaddingCount -lt 0) {
         $LeftPaddingCount = 0
@@ -150,17 +135,22 @@ function Show-PixelLoadingBar {
 
     $LeftPadding = " " * $LeftPaddingCount
 
+    Write-Host ""
+    Write-Host ""
+    Write-Centered "LOADING..." "Yellow"
+    Write-Host ""
+
     Write-Host "$LeftPadding$TopBorder" -ForegroundColor White
 
     Write-Host -NoNewline "$LeftPadding|" -ForegroundColor White
     Write-Host -NoNewline " "
 
-    for ($Index = 1; $Index -le $TotalBlocks; $Index++) {
-        if ($Index -le $FilledBlocks) {
-            Write-PixelBlock -Filled $true
+    for ($i = 1; $i -le $TotalBlocks; $i++) {
+        if ($i -le $FilledBlocks) {
+            Write-YellowBlock
         }
         else {
-            Write-PixelBlock -Filled $false
+            Write-EmptyBlock
         }
     }
 
@@ -170,37 +160,7 @@ function Show-PixelLoadingBar {
     Write-Host "$LeftPadding$BottomBorder" -ForegroundColor White
     Write-Host ""
 
-    $PercentText = "$Percent%"
-
-    Write-CenterText $PercentText "Yellow"
-    Write-Host ""
-}
-
-function Show-ErrorBox {
-    param(
-        [string]$Message
-    )
-
-    try {
-        Reset-SafeConsole
-        Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
-
-        [System.Windows.Forms.MessageBox]::Show(
-            $Message,
-            "$AppName Error",
-            [System.Windows.Forms.MessageBoxButtons]::OK,
-            [System.Windows.Forms.MessageBoxIcon]::Error
-        ) | Out-Null
-    }
-    catch {
-        Clear-Host
-        Write-Host ""
-        Write-Host "$AppName Error" -ForegroundColor Red
-        Write-Host ""
-        Write-Host $Message -ForegroundColor White
-        Write-Host ""
-        Start-Sleep -Seconds 6
-    }
+    Write-Centered "$Percent%" "Yellow"
 }
 
 function Close-Safe {
@@ -263,7 +223,48 @@ function Test-ExeFile {
     }
 }
 
-function Download-FileWithPixelProgress {
+function Show-ErrorMessage {
+    param(
+        [string]$Message
+    )
+
+    Restore-Console
+    Clear-Host
+
+    try {
+        Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
+
+        [System.Windows.Forms.MessageBox]::Show(
+            $Message,
+            "$AppName Error",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Error
+        ) | Out-Null
+    }
+    catch {
+        Write-Host ""
+        Write-Host "$AppName Error" -ForegroundColor Red
+        Write-Host ""
+        Write-Host $Message -ForegroundColor White
+        Write-Host ""
+        Start-Sleep -Seconds 6
+    }
+}
+
+function Close-ThisPowerShell {
+    Restore-Console
+
+    Start-Sleep -Milliseconds 300
+
+    try {
+        Stop-Process -Id $PID -Force
+    }
+    catch {
+        exit
+    }
+}
+
+function Download-FileWithPixelBar {
     param(
         [string]$Url,
         [string]$Destination
@@ -274,7 +275,7 @@ function Download-FileWithPixelProgress {
     $OutputStream = $null
 
     try {
-        Show-PixelLoadingBar -Percent 0
+        Show-PixelLoading -Percent 0
 
         $Request = [System.Net.HttpWebRequest]::Create($Url)
         $Request.Method = "GET"
@@ -315,10 +316,10 @@ function Download-FileWithPixelProgress {
             }
 
             $Now = Get-Date
-            $MillisecondsPassed = ($Now - $LastDrawTime).TotalMilliseconds
+            $Elapsed = ($Now - $LastDrawTime).TotalMilliseconds
 
-            if (($Percent -ne $LastPercent) -and ($MillisecondsPassed -ge 60)) {
-                Show-PixelLoadingBar -Percent $Percent
+            if (($Percent -ne $LastPercent) -and ($Elapsed -ge 80)) {
+                Show-PixelLoading -Percent $Percent
                 $LastPercent = $Percent
                 $LastDrawTime = $Now
             }
@@ -328,7 +329,7 @@ function Download-FileWithPixelProgress {
         Close-Safe -Object $InputStream
         Close-Safe -Object $Response
 
-        Show-PixelLoadingBar -Percent 100
+        Show-PixelLoading -Percent 100
         Start-Sleep -Milliseconds 500
     }
     catch {
@@ -341,8 +342,7 @@ function Download-FileWithPixelProgress {
 }
 
 try {
-    Set-SafeConsole
-    Clear-Host
+    Set-ConsoleReady
 
     if (!(Test-Path $TempFolder)) {
         New-Item -ItemType Directory -Path $TempFolder | Out-Null
@@ -352,7 +352,7 @@ try {
         Remove-Item -Path $OutFile -Force
     }
 
-    Download-FileWithPixelProgress -Url $ExeUrl -Destination $OutFile
+    Download-FileWithPixelBar -Url $ExeUrl -Destination $OutFile
 
     if (!(Test-Path $OutFile)) {
         throw "Download completed, but loader.exe was not found."
@@ -374,56 +374,29 @@ try {
     catch {
     }
 
-    Clear-Host
+    Show-PixelLoading -Percent 100
+    Start-Sleep -Milliseconds 400
 
-    Write-Host ""
-    Write-Host ""
-    Write-CenterText "LOADING COMPLETE" "Yellow"
-    Write-Host ""
-    Show-PixelLoadingBar -Percent 100
+    $ProcessInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $ProcessInfo.FileName = $OutFile
+    $ProcessInfo.WorkingDirectory = $TempFolder
+    $ProcessInfo.UseShellExecute = $true
+    $ProcessInfo.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Normal
 
-    Reset-SafeConsole
+    $StartedProcess = [System.Diagnostics.Process]::Start($ProcessInfo)
 
-    Write-Host ""
-    Write-CenterText "File ready: $OutFile" "White"
-    Write-Host ""
-
-    $RunConfirm = Read-Host "Type Y and press Enter to open loader.exe"
-
-    if ($RunConfirm -eq "Y" -or $RunConfirm -eq "y") {
-        $ProcessInfo = New-Object System.Diagnostics.ProcessStartInfo
-        $ProcessInfo.FileName = $OutFile
-        $ProcessInfo.WorkingDirectory = $TempFolder
-        $ProcessInfo.UseShellExecute = $true
-        $ProcessInfo.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Normal
-
-        $StartedProcess = [System.Diagnostics.Process]::Start($ProcessInfo)
-
-        if ($null -eq $StartedProcess) {
-            throw "Cannot start loader.exe."
-        }
-
-        Start-Sleep -Milliseconds 800
-    }
-    else {
-        Clear-Host
-        Write-Host ""
-        Write-Host "Cancelled." -ForegroundColor Yellow
-        Write-Host ""
-        Write-Host "File saved to:" -ForegroundColor White
-        Write-Host $OutFile -ForegroundColor White
-        Write-Host ""
-        Start-Sleep -Seconds 4
+    if ($null -eq $StartedProcess) {
+        throw "Cannot start loader.exe."
     }
 
-    exit
+    Start-Sleep -Milliseconds 900
+
+    Close-ThisPowerShell
 }
 catch {
-    Reset-SafeConsole
-
     $ErrorMessage = $_.Exception.Message
 
-    Show-ErrorBox -Message $ErrorMessage
+    Show-ErrorMessage -Message $ErrorMessage
 
-    exit
+    Close-ThisPowerShell
 }
