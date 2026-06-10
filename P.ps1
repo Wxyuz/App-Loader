@@ -1,432 +1,179 @@
-$ErrorActionPreference = "Stop"
-$ProgressPreference = "SilentlyContinue"
+# ==========================================================
+# GODPROJECTH POWERSHELL LOADER
+# PowerShell Loading UI + Run EXE
+# KeyAuth อยู่ใน .exe ตามเดิม
+# ==========================================================
 
-$AppName = "App-Loader"
-$ScriptVersion = "RAW-RUN-GUI-V901"
+$Host.UI.RawUI.WindowTitle = ">>==<< GODPROJECTH LOADER >>==<<"
 
-$ExeUrl = "https://github.com/Wxyuz/App-Loader/releases/latest/download/loader.exe"
-$FileName = "loader.exe"
+$ExePath = ".\GODPROJECTH.exe"
 
-$TempFolder = Join-Path $env:TEMP $AppName
-$OutFile = Join-Path $TempFolder $FileName
-$LogFile = Join-Path $TempFolder "launcher-log.txt"
+$ErrorActionPreference = "SilentlyContinue"
 
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-function Write-Log {
-    param(
-        [string]$Text
-    )
-
+function Set-ConsoleSize {
     try {
-        if (!(Test-Path $TempFolder)) {
-            New-Item -ItemType Directory -Path $TempFolder | Out-Null
-        }
+        $raw = $Host.UI.RawUI
+        $buffer = $raw.BufferSize
+        $window = $raw.WindowSize
 
-        $Time = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-        Add-Content -Path $LogFile -Value "[$Time] $Text" -Encoding UTF8
-    }
-    catch {
-    }
+        $buffer.Width = 100
+        $buffer.Height = 3000
+        $raw.BufferSize = $buffer
+
+        $window.Width = 100
+        $window.Height = 30
+        $raw.WindowSize = $window
+    } catch {}
 }
 
-function Set-ConsoleReady {
-    try {
-        $Host.UI.RawUI.WindowTitle = $AppName
-    }
-    catch {
-    }
-
-    try {
-        [Console]::CursorVisible = $false
-    }
-    catch {
-    }
-
-    try {
-        Clear-Host
-    }
-    catch {
-    }
-}
-
-function Restore-Console {
-    try {
-        [Console]::CursorVisible = $true
-    }
-    catch {
-    }
-}
-
-function Get-ConsoleWidthSafe {
-    try {
-        return [Console]::WindowWidth
-    }
-    catch {
-        return 80
-    }
-}
-
-function Write-Centered {
+function Write-Center {
     param(
         [string]$Text,
-        [string]$ForegroundColor = "White"
+        [ConsoleColor]$Color = "White"
     )
 
-    $Width = Get-ConsoleWidthSafe
-
-    if ($Text.Length -ge $Width) {
-        Write-Host $Text -ForegroundColor $ForegroundColor
-        return
-    }
-
-    $LeftPaddingCount = [math]::Floor(($Width - $Text.Length) / 2)
-
-    if ($LeftPaddingCount -lt 0) {
-        $LeftPaddingCount = 0
-    }
-
-    $LeftPadding = " " * $LeftPaddingCount
-
-    Write-Host "$LeftPadding$Text" -ForegroundColor $ForegroundColor
+    $width = $Host.UI.RawUI.WindowSize.Width
+    $padding = [Math]::Max(0, [Math]::Floor(($width - $Text.Length) / 2))
+    Write-Host (" " * $padding) -NoNewline
+    Write-Host $Text -ForegroundColor $Color
 }
 
-function Write-YellowBlock {
-    Write-Host -NoNewline "  " -BackgroundColor Yellow
-}
-
-function Write-EmptyBlock {
-    Write-Host -NoNewline "  " -BackgroundColor Black
-}
-
-function Show-PixelLoading {
+function Write-Slow {
     param(
-        [int]$Percent,
-        [string]$StatusText
+        [string]$Text,
+        [ConsoleColor]$Color = "White",
+        [int]$Delay = 15
     )
 
-    if ($Percent -lt 0) {
-        $Percent = 0
+    foreach ($char in $Text.ToCharArray()) {
+        Write-Host $char -NoNewline -ForegroundColor $Color
+        Start-Sleep -Milliseconds $Delay
     }
+    Write-Host ""
+}
 
-    if ($Percent -gt 100) {
-        $Percent = 100
-    }
+function Draw-Line {
+    param(
+        [ConsoleColor]$Color = "DarkYellow"
+    )
 
+    Write-Host ""
+    Write-Center "====================================================================" $Color
+    Write-Host ""
+}
+
+function Show-Logo {
     Clear-Host
+    Draw-Line DarkYellow
 
-    $TotalBlocks = 18
-    $FilledBlocks = [math]::Floor(($Percent / 100) * $TotalBlocks)
+    Write-Center "   ██████╗  ██████╗ ██████╗ ██████╗ ██████╗  ██████╗      ██╗███████╗ ██████╗████████╗██╗  ██╗" Yellow
+    Write-Center "  ██╔════╝ ██╔═══██╗██╔══██╗██╔══██╗██╔══██╗██╔═══██╗     ██║██╔════╝██╔════╝╚══██╔══╝██║  ██║" Yellow
+    Write-Center "  ██║  ███╗██║   ██║██║  ██║██████╔╝██████╔╝██║   ██║     ██║█████╗  ██║        ██║   ███████║" Yellow
+    Write-Center "  ██║   ██║██║   ██║██║  ██║██╔═══╝ ██╔══██╗██║   ██║██   ██║██╔══╝  ██║        ██║   ██╔══██║" Yellow
+    Write-Center "  ╚██████╔╝╚██████╔╝██████╔╝██║     ██║  ██║╚██████╔╝╚█████╔╝███████╗╚██████╗   ██║   ██║  ██║" Yellow
+    Write-Center "   ╚═════╝  ╚═════╝ ╚═════╝ ╚═╝     ╚═╝  ╚═╝ ╚═════╝  ╚════╝ ╚══════╝ ╚═════╝   ╚═╝   ╚═╝  ╚═╝" Yellow
 
-    $InnerWidth = ($TotalBlocks * 2) + 2
-    $TopBorder = "+" + ("-" * $InnerWidth) + "+"
-    $BottomBorder = "+" + ("-" * $InnerWidth) + "+"
+    Draw-Line DarkYellow
 
-    $ConsoleWidth = Get-ConsoleWidthSafe
-    $BarWidth = $TopBorder.Length
-    $LeftPaddingCount = [math]::Floor(($ConsoleWidth - $BarWidth) / 2)
+    Write-Center "[+] GODPROJECTH SECURE POWERSHELL LOADER [+]" Green
+    Write-Center "[+] EXE KEYAUTH MODE ENABLED [+]" Cyan
+    Write-Center "[+] LOADING DATA PLEASE WAIT [+]" White
 
-    if ($LeftPaddingCount -lt 0) {
-        $LeftPaddingCount = 0
-    }
-
-    $LeftPadding = " " * $LeftPaddingCount
-
-    Write-Host ""
-    Write-Host ""
-    Write-Centered "LOADING..." "Yellow"
-    Write-Host ""
-
-    Write-Host "$LeftPadding$TopBorder" -ForegroundColor White
-
-    Write-Host -NoNewline "$LeftPadding|" -ForegroundColor White
-    Write-Host -NoNewline " "
-
-    for ($Index = 1; $Index -le $TotalBlocks; $Index++) {
-        if ($Index -le $FilledBlocks) {
-            Write-YellowBlock
-        }
-        else {
-            Write-EmptyBlock
-        }
-    }
-
-    Write-Host -NoNewline " "
-    Write-Host "|" -ForegroundColor White
-
-    Write-Host "$LeftPadding$BottomBorder" -ForegroundColor White
-    Write-Host ""
-
-    Write-Centered "$Percent%" "Yellow"
-    Write-Host ""
-
-    if ($null -ne $StatusText -and $StatusText.Trim() -ne "") {
-        Write-Centered $StatusText "White"
-    }
+    Draw-Line DarkYellow
 }
 
-function Close-Safe {
+function Show-Progress {
     param(
-        $Object
+        [string]$Label,
+        [int]$Duration = 800
     )
 
-    if ($null -ne $Object) {
-        try {
-            $Object.Close()
-        }
-        catch {
-        }
+    $barLength = 40
 
-        try {
-            $Object.Dispose()
-        }
-        catch {
-        }
+    Write-Host ""
+    Write-Host "   $Label" -ForegroundColor Cyan
+    Write-Host "   [" -NoNewline -ForegroundColor DarkGray
+
+    for ($i = 0; $i -le $barLength; $i++) {
+        Write-Host "█" -NoNewline -ForegroundColor Green
+        Start-Sleep -Milliseconds ([Math]::Max(5, [int]($Duration / $barLength)))
     }
+
+    Write-Host "] " -NoNewline -ForegroundColor DarkGray
+    Write-Host "OK" -ForegroundColor Green
 }
 
-function Show-ErrorMessage {
+function Spinner {
     param(
-        [string]$Message
+        [string]$Text,
+        [int]$Seconds = 2
     )
 
-    Restore-Console
+    $frames = @("|", "/", "-", "\")
+    $end = (Get-Date).AddSeconds($Seconds)
+    $i = 0
 
-    try {
-        Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
+    while ((Get-Date) -lt $end) {
+        Write-Host "`r   $Text $($frames[$i % $frames.Count])" -NoNewline -ForegroundColor Yellow
+        Start-Sleep -Milliseconds 100
+        $i++
+    }
 
-        [System.Windows.Forms.MessageBox]::Show(
-            $Message,
-            "$AppName Error",
-            [System.Windows.Forms.MessageBoxButtons]::OK,
-            [System.Windows.Forms.MessageBoxIcon]::Error
-        ) | Out-Null
-    }
-    catch {
-        Clear-Host
-        Write-Host ""
-        Write-Host "$AppName Error" -ForegroundColor Red
-        Write-Host ""
-        Write-Host $Message -ForegroundColor White
-        Write-Host ""
-        Start-Sleep -Seconds 7
-    }
+    Write-Host "`r   $Text DONE     " -ForegroundColor Green
 }
 
-function Close-ThisPowerShell {
-    Restore-Console
-
-    Start-Sleep -Milliseconds 300
-
-    try {
-        Stop-Process -Id $PID -Force
-    }
-    catch {
+function Check-Exe {
+    if (!(Test-Path $ExePath)) {
+        Write-Host ""
+        Write-Host "   [FAIL] ไม่พบไฟล์ .exe" -ForegroundColor Red
+        Write-Host "   Path ที่ตั้งไว้: $ExePath" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "   วิธีแก้:" -ForegroundColor Cyan
+        Write-Host "   1. เอาไฟล์ GODPROJECTH.exe ไว้โฟลเดอร์เดียวกับ GODPROJECTH_LOADER.ps1"
+        Write-Host "   2. หรือแก้บรรทัด `$ExePath ให้ตรงชื่อไฟล์จริง"
+        Write-Host ""
+        pause
         exit
     }
 }
 
-function Test-ExeFile {
-    param(
-        [string]$Path
-    )
-
-    if (!(Test-Path $Path)) {
-        return $false
-    }
-
-    $FileInfo = Get-Item $Path
-
-    if ($FileInfo.Length -lt 2) {
-        return $false
-    }
-
-    $FileStream = $null
+function Start-MainExe {
+    Write-Host ""
+    Write-Host "   [+] Starting GODPROJECTH.exe ..." -ForegroundColor Green
+    Start-Sleep -Milliseconds 800
 
     try {
-        $FileStream = [System.IO.File]::OpenRead($Path)
-
-        $Byte1 = $FileStream.ReadByte()
-        $Byte2 = $FileStream.ReadByte()
-
-        if ($Byte1 -eq 77 -and $Byte2 -eq 90) {
-            return $true
-        }
-
-        return $false
+        Start-Process -FilePath $ExePath -WorkingDirectory (Split-Path -Parent (Resolve-Path $ExePath)) -Wait
     }
     catch {
-        Write-Log "Test-ExeFile failed"
-        Write-Log $_.Exception.Message
-        return $false
-    }
-    finally {
-        if ($null -ne $FileStream) {
-            $FileStream.Close()
-            $FileStream.Dispose()
-        }
+        Write-Host ""
+        Write-Host "   [FAIL] เปิด .exe ไม่ได้" -ForegroundColor Red
+        Write-Host "   $($_.Exception.Message)" -ForegroundColor Yellow
+        pause
+        exit
     }
 }
 
-function Download-FileWithPixelBar {
-    param(
-        [string]$Url,
-        [string]$Destination
-    )
+Set-ConsoleSize
+Show-Logo
 
-    $Response = $null
-    $InputStream = $null
-    $OutputStream = $null
+Spinner "Checking system" 1
+Spinner "Loading protected modules" 1
+Spinner "Preparing KeyAuth EXE session" 1
 
-    try {
-        Show-PixelLoading -Percent 0 -StatusText "Preparing download"
+Show-Progress "Checking GODPROJECTH executable" 500
+Check-Exe
 
-        $Request = [System.Net.HttpWebRequest]::Create($Url)
-        $Request.Method = "GET"
-        $Request.AllowAutoRedirect = $true
-        $Request.UserAgent = "Mozilla/5.0 App-Loader"
-        $Request.Timeout = 60000
-        $Request.ReadWriteTimeout = 60000
+Show-Progress "Loading user interface" 700
+Show-Progress "Loading secure data" 900
+Show-Progress "Preparing launch environment" 700
 
-        $Response = $Request.GetResponse()
-        $TotalBytes = [int64]$Response.ContentLength
+Write-Host ""
+Write-Slow "   [+] ทุกอย่างพร้อมแล้ว กำลังเปิดโปรแกรมหลัก..." Green 20
 
-        $InputStream = $Response.GetResponseStream()
-        $OutputStream = [System.IO.File]::Create($Destination)
+Start-Sleep -Seconds 1
+Start-MainExe
 
-        $Buffer = New-Object byte[] 65536
-        $TotalRead = 0
-        $Percent = 0
-        $LastPercent = -1
-        $LastDrawTime = Get-Date
-
-        while ($true) {
-            $Read = $InputStream.Read($Buffer, 0, $Buffer.Length)
-
-            if ($Read -le 0) {
-                break
-            }
-
-            $OutputStream.Write($Buffer, 0, $Read)
-            $TotalRead += $Read
-
-            if ($TotalBytes -gt 0) {
-                $Percent = [int][math]::Floor(($TotalRead / $TotalBytes) * 100)
-            }
-            else {
-                if ($Percent -lt 95) {
-                    $Percent = $Percent + 1
-                }
-            }
-
-            $Now = Get-Date
-            $Elapsed = ($Now - $LastDrawTime).TotalMilliseconds
-
-            if (($Percent -ne $LastPercent) -and ($Elapsed -ge 80)) {
-                Show-PixelLoading -Percent $Percent -StatusText "Downloading loader.exe"
-                $LastPercent = $Percent
-                $LastDrawTime = $Now
-            }
-        }
-
-        Close-Safe -Object $OutputStream
-        Close-Safe -Object $InputStream
-        Close-Safe -Object $Response
-
-        Show-PixelLoading -Percent 100 -StatusText "Download complete"
-        Start-Sleep -Milliseconds 500
-    }
-    catch {
-        Close-Safe -Object $OutputStream
-        Close-Safe -Object $InputStream
-        Close-Safe -Object $Response
-
-        Write-Log "Download failed"
-        Write-Log $_.Exception.Message
-
-        throw $_
-    }
-}
-
-try {
-    Set-ConsoleReady
-
-    if (!(Test-Path $TempFolder)) {
-        New-Item -ItemType Directory -Path $TempFolder | Out-Null
-    }
-
-    if (Test-Path $LogFile) {
-        Remove-Item -Path $LogFile -Force
-    }
-
-    Write-Log "Script started"
-    Write-Log "Script version: $ScriptVersion"
-
-    if (Test-Path $OutFile) {
-        try {
-            Remove-Item -Path $OutFile -Force
-        }
-        catch {
-            Write-Log "Cannot remove old loader.exe"
-            Write-Log $_.Exception.Message
-        }
-    }
-
-    Show-PixelLoading -Percent 5 -StatusText "Starting"
-
-    Download-FileWithPixelBar -Url $ExeUrl -Destination $OutFile
-
-    if (!(Test-Path $OutFile)) {
-        throw "Download completed, but loader.exe was not found."
-    }
-
-    $DownloadedFile = Get-Item $OutFile
-
-    if ($DownloadedFile.Length -le 0) {
-        throw "Downloaded loader.exe is empty."
-    }
-
-    if (!(Test-ExeFile -Path $OutFile)) {
-        throw "Downloaded file is not a valid EXE. Check GitHub Release. The asset file must be named loader.exe."
-    }
-
-    try {
-        Unblock-File -Path $OutFile -ErrorAction SilentlyContinue
-    }
-    catch {
-        Write-Log "Unblock-File failed"
-        Write-Log $_.Exception.Message
-    }
-
-    Show-PixelLoading -Percent 100 -StatusText "Starting GUI"
-    Start-Sleep -Milliseconds 500
-
-    $ProcessInfo = New-Object System.Diagnostics.ProcessStartInfo
-    $ProcessInfo.FileName = $OutFile
-    $ProcessInfo.WorkingDirectory = $TempFolder
-    $ProcessInfo.UseShellExecute = $true
-    $ProcessInfo.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Normal
-
-    $StartedProcess = [System.Diagnostics.Process]::Start($ProcessInfo)
-
-    if ($null -eq $StartedProcess) {
-        throw "Cannot start loader.exe."
-    }
-
-    Write-Log "loader.exe started"
-    Write-Log "Path: $OutFile"
-
-    Start-Sleep -Milliseconds 1200
-
-    Close-ThisPowerShell
-}
-catch {
-    $ErrorMessage = $_.Exception.Message
-
-    Write-Log "Fatal error"
-    Write-Log $ErrorMessage
-
-    Show-ErrorMessage -Message $ErrorMessage
-
-    Close-ThisPowerShell
-}
+Write-Host ""
+Write-Host "   [+] Program closed." -ForegroundColor Yellow
+Start-Sleep -Seconds 1
