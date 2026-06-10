@@ -2,7 +2,7 @@ $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
 $AppName = "GODPROJECTH-LOADER"
-$ScriptVersion = "FIX-RELEASE-EXE-V1101"
+$ScriptVersion = "GUI-OPEN-KEYAUTH-DIAG-V1201"
 
 $ExeUrlPrimary = "https://github.com/Wxyuz/App-Loader/releases/latest/download/loader.exe"
 $ExeUrlBackup = "https://github.com/Wxyuz/App-Loader/releases/download/v1.0.0/loader.exe"
@@ -12,6 +12,9 @@ $FileName = "loader.exe"
 $TempFolder = Join-Path $env:TEMP "App-Loader"
 $OutFile = Join-Path $TempFolder $FileName
 $LogFile = Join-Path $TempFolder "launcher-log.txt"
+
+$KeyAuthHost = "keyauth.win"
+$KeyAuthPort = 443
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
@@ -193,27 +196,38 @@ function Close-Safe {
     }
 }
 
-function Show-ErrorMessage {
+function Show-MessageBox {
     param(
-        [string]$Message
+        [string]$Title,
+        [string]$Message,
+        [string]$Icon
     )
 
-    Restore-Console
-
     try {
+        Restore-Console
         Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
+
+        if ($Icon -eq "Warning") {
+            $MessageIcon = [System.Windows.Forms.MessageBoxIcon]::Warning
+        }
+        elseif ($Icon -eq "Error") {
+            $MessageIcon = [System.Windows.Forms.MessageBoxIcon]::Error
+        }
+        else {
+            $MessageIcon = [System.Windows.Forms.MessageBoxIcon]::Information
+        }
 
         [System.Windows.Forms.MessageBox]::Show(
             $Message,
-            "App-Loader Error",
+            $Title,
             [System.Windows.Forms.MessageBoxButtons]::OK,
-            [System.Windows.Forms.MessageBoxIcon]::Error
+            $MessageIcon
         ) | Out-Null
     }
     catch {
         Clear-Host
         Write-Host ""
-        Write-Host "App-Loader Error" -ForegroundColor Red
+        Write-Host $Title -ForegroundColor Red
         Write-Host ""
         Write-Host $Message -ForegroundColor White
         Write-Host ""
@@ -224,13 +238,60 @@ function Show-ErrorMessage {
 function Close-ThisPowerShell {
     Restore-Console
 
-    Start-Sleep -Milliseconds 400
+    Start-Sleep -Milliseconds 500
 
     try {
         Stop-Process -Id $PID -Force
     }
     catch {
         exit
+    }
+}
+
+function Test-TcpPort {
+    param(
+        [string]$HostName,
+        [int]$Port,
+        [int]$TimeoutMilliseconds
+    )
+
+    $Client = $null
+
+    try {
+        $Client = New-Object System.Net.Sockets.TcpClient
+        $AsyncResult = $Client.BeginConnect($HostName, $Port, $null, $null)
+        $Success = $AsyncResult.AsyncWaitHandle.WaitOne($TimeoutMilliseconds, $false)
+
+        if ($Success -ne $true) {
+            try {
+                $Client.Close()
+            }
+            catch {
+            }
+
+            return $false
+        }
+
+        $Client.EndConnect($AsyncResult)
+
+        try {
+            $Client.Close()
+        }
+        catch {
+        }
+
+        return $true
+    }
+    catch {
+        try {
+            if ($null -ne $Client) {
+                $Client.Close()
+            }
+        }
+        catch {
+        }
+
+        return $false
     }
 }
 
@@ -436,18 +497,25 @@ try {
     Write-Log "Backup EXE URL: $ExeUrlBackup"
 
     Show-PixelLoading -Percent 5 -StatusText "Checking system"
-    Start-Sleep -Milliseconds 400
+    Start-Sleep -Milliseconds 300
 
-    Show-PixelLoading -Percent 15 -StatusText "Loading protected modules"
-    Start-Sleep -Milliseconds 400
+    Show-PixelLoading -Percent 15 -StatusText "Checking network"
+    $KeyAuthReachable = Test-TcpPort -HostName $KeyAuthHost -Port $KeyAuthPort -TimeoutMilliseconds 5000
+
+    if ($KeyAuthReachable -eq $true) {
+        Write-Log "KeyAuth TCP 443 reachable"
+    }
+    else {
+        Write-Log "KeyAuth TCP 443 not reachable on this machine"
+    }
 
     Show-PixelLoading -Percent 25 -StatusText "Preparing GUI session"
-    Start-Sleep -Milliseconds 400
+    Start-Sleep -Milliseconds 300
 
     $DownloadResult = Download-LoaderExe -Destination $OutFile
 
     if ($DownloadResult -ne $true) {
-        throw "loader.exe not found or invalid. Upload loader.exe to GitHub Releases, not raw/main. Required link: https://github.com/Wxyuz/App-Loader/releases/latest/download/loader.exe"
+        throw "loader.exe not found or invalid. Upload loader.exe to GitHub Releases. Required asset name: loader.exe"
     }
 
     if (!(Test-Path $OutFile)) {
@@ -470,6 +538,13 @@ try {
     catch {
         Write-Log "Unblock-File failed"
         Write-Log $_.Exception.Message
+    }
+
+    if ($KeyAuthReachable -ne $true) {
+        Show-MessageBox `
+            -Title "Network Warning" `
+            -Icon "Warning" `
+            -Message "เครื่องนี้ติดต่อ keyauth.win:443 ไม่ได้ ถ้า GUI ขึ้น WinError 10061 แปลว่าเครื่องนี้โดน Firewall / Antivirus / VPN / Proxy / DNS / Network บล็อก หรือ source ของ loader.exe ใช้ KeyAuth endpoint/library เก่า"
     }
 
     Show-PixelLoading -Percent 100 -StatusText "Starting GUI"
@@ -500,7 +575,10 @@ catch {
     Write-Log "Fatal error"
     Write-Log $ErrorMessage
 
-    Show-ErrorMessage -Message $ErrorMessage
+    Show-MessageBox `
+        -Title "App-Loader Error" `
+        -Icon "Error" `
+        -Message $ErrorMessage
 
     Close-ThisPowerShell
 }
