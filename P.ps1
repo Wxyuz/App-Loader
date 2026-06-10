@@ -1,139 +1,506 @@
 $ErrorActionPreference = "Stop"
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$Host.UI.RawUI.WindowTitle = ">>==<< GODPROJECTH LOADER >>==<<"
+$ProgressPreference = "SilentlyContinue"
 
-$ExeName = "loader.exe"
+$AppName = "GODPROJECTH-LOADER"
+$ScriptVersion = "FIX-RELEASE-EXE-V1101"
 
-# ต้องเป็นลิงก์ GitHub Releases เท่านั้น
-$ExeDownloadUrl = "https://github.com/Wxyuz/App-Loader/releases/download/v1.0/loader.exe"
+$ExeUrlPrimary = "https://github.com/Wxyuz/App-Loader/releases/latest/download/loader.exe"
+$ExeUrlBackup = "https://github.com/Wxyuz/App-Loader/releases/download/v1.0.0/loader.exe"
 
-$InstallFolder = Join-Path $env:LOCALAPPDATA "GODPROJECTH"
-$ExePath = Join-Path $InstallFolder $ExeName
+$FileName = "loader.exe"
 
-function Show-Logo {
+$TempFolder = Join-Path $env:TEMP "App-Loader"
+$OutFile = Join-Path $TempFolder $FileName
+$LogFile = Join-Path $TempFolder "launcher-log.txt"
+
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+function Write-Log {
+    param(
+        [string]$Text
+    )
+
+    try {
+        if (!(Test-Path $TempFolder)) {
+            New-Item -ItemType Directory -Path $TempFolder | Out-Null
+        }
+
+        $Time = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        Add-Content -Path $LogFile -Value "[$Time] $Text" -Encoding UTF8
+    }
+    catch {
+    }
+}
+
+function Set-ConsoleReady {
+    try {
+        $Host.UI.RawUI.WindowTitle = ">>==<< GODPROJECTH LOADER >>==<<"
+    }
+    catch {
+    }
+
+    try {
+        [Console]::CursorVisible = $false
+    }
+    catch {
+    }
+
+    try {
+        Clear-Host
+    }
+    catch {
+    }
+}
+
+function Restore-Console {
+    try {
+        [Console]::CursorVisible = $true
+    }
+    catch {
+    }
+}
+
+function Get-ConsoleWidthSafe {
+    try {
+        return [Console]::WindowWidth
+    }
+    catch {
+        return 80
+    }
+}
+
+function Write-Centered {
+    param(
+        [string]$Text,
+        [string]$ForegroundColor = "White"
+    )
+
+    $Width = Get-ConsoleWidthSafe
+
+    if ($Text.Length -ge $Width) {
+        Write-Host $Text -ForegroundColor $ForegroundColor
+        return
+    }
+
+    $LeftPaddingCount = [math]::Floor(($Width - $Text.Length) / 2)
+
+    if ($LeftPaddingCount -lt 0) {
+        $LeftPaddingCount = 0
+    }
+
+    $LeftPadding = " " * $LeftPaddingCount
+
+    Write-Host "$LeftPadding$Text" -ForegroundColor $ForegroundColor
+}
+
+function Write-YellowBlock {
+    Write-Host -NoNewline "  " -BackgroundColor Yellow
+}
+
+function Write-EmptyBlock {
+    Write-Host -NoNewline "  " -BackgroundColor Black
+}
+
+function Show-PixelLoading {
+    param(
+        [int]$Percent,
+        [string]$StatusText
+    )
+
+    if ($Percent -lt 0) {
+        $Percent = 0
+    }
+
+    if ($Percent -gt 100) {
+        $Percent = 100
+    }
+
     Clear-Host
-    Write-Host "============================================================" -ForegroundColor Cyan
-    Write-Host " ██████╗  ██████╗ ██████╗ ██████╗ ██████╗ " -ForegroundColor Yellow
-    Write-Host "██╔════╝ ██╔═══██╗██╔══██╗██╔══██╗██╔══██╗" -ForegroundColor Yellow
-    Write-Host "██║  ███╗██║   ██║██║  ██║██████╔╝██████╔╝" -ForegroundColor Yellow
-    Write-Host "██║   ██║██║   ██║██║  ██║██╔═══╝ ██╔══██╗" -ForegroundColor Yellow
-    Write-Host "╚██████╔╝╚██████╔╝██████╔╝██║     ██║  ██║" -ForegroundColor Yellow
-    Write-Host " ╚═════╝  ╚═════╝ ╚═════╝ ╚═╝     ╚═╝  ╚═╝" -ForegroundColor Yellow
-    Write-Host "GODPROJECTH SECURE POWERSHELL LOADER" -ForegroundColor Green
-    Write-Host "LOADING DATA PLEASE WAIT" -ForegroundColor White
-    Write-Host "============================================================" -ForegroundColor Cyan
-    Write-Host ""
-}
 
-function Step {
-    param([string]$Text)
+    $TotalBlocks = 18
+    $FilledBlocks = [math]::Floor(($Percent / 100) * $TotalBlocks)
 
-    Write-Host "$Text " -NoNewline -ForegroundColor Cyan
-    Start-Sleep -Milliseconds 350
-    Write-Host "DONE" -ForegroundColor Green
-}
+    $InnerWidth = ($TotalBlocks * 2) + 2
+    $TopBorder = "+" + ("-" * $InnerWidth) + "+"
+    $BottomBorder = "+" + ("-" * $InnerWidth) + "+"
 
-function Progress {
-    param([string]$Text)
+    $ConsoleWidth = Get-ConsoleWidthSafe
+    $BarWidth = $TopBorder.Length
+    $LeftPaddingCount = [math]::Floor(($ConsoleWidth - $BarWidth) / 2)
+
+    if ($LeftPaddingCount -lt 0) {
+        $LeftPaddingCount = 0
+    }
+
+    $LeftPadding = " " * $LeftPaddingCount
 
     Write-Host ""
-    Write-Host "$Text" -ForegroundColor Cyan
-    Write-Host "[" -NoNewline -ForegroundColor DarkGray
-
-    for ($i = 0; $i -lt 45; $i++) {
-        Write-Host "█" -NoNewline -ForegroundColor Green
-        Start-Sleep -Milliseconds 8
-    }
-
-    Write-Host "] OK" -ForegroundColor Green
-}
-
-function Prepare-Folder {
-    if (!(Test-Path $InstallFolder)) {
-        New-Item -ItemType Directory -Path $InstallFolder -Force | Out-Null
-    }
-}
-
-function Download-Loader {
     Write-Host ""
-    Write-Host "[!] loader.exe not found" -ForegroundColor Yellow
-    Write-Host "[+] Downloading loader.exe..." -ForegroundColor Cyan
-    Write-Host "URL: $ExeDownloadUrl" -ForegroundColor Yellow
+    Write-Centered "============================================" "Cyan"
+    Write-Centered "GODPROJECTH SECURE POWERSHELL LOADER" "Green"
+    Write-Centered "LOADING DATA PLEASE WAIT" "White"
+    Write-Centered "============================================" "Cyan"
+    Write-Host ""
 
-    if (Test-Path $ExePath) {
-        Remove-Item $ExePath -Force
+    Write-Centered "LOADING..." "Yellow"
+    Write-Host ""
+
+    Write-Host "$LeftPadding$TopBorder" -ForegroundColor White
+
+    Write-Host -NoNewline "$LeftPadding|" -ForegroundColor White
+    Write-Host -NoNewline " "
+
+    for ($Index = 1; $Index -le $TotalBlocks; $Index++) {
+        if ($Index -le $FilledBlocks) {
+            Write-YellowBlock
+        }
+        else {
+            Write-EmptyBlock
+        }
     }
 
-    Invoke-WebRequest `
-        -Uri $ExeDownloadUrl `
-        -OutFile $ExePath `
-        -UseBasicParsing `
-        -TimeoutSec 120
+    Write-Host -NoNewline " "
+    Write-Host "|" -ForegroundColor White
 
-    if (!(Test-Path $ExePath)) {
-        throw "Download failed: file not found after download"
+    Write-Host "$LeftPadding$BottomBorder" -ForegroundColor White
+    Write-Host ""
+
+    Write-Centered "$Percent%" "Yellow"
+    Write-Host ""
+
+    if ($null -ne $StatusText -and $StatusText.Trim() -ne "") {
+        Write-Centered $StatusText "White"
     }
-
-    $Bytes = [System.IO.File]::ReadAllBytes($ExePath)
-
-    if ($Bytes.Length -lt 100000) {
-        Remove-Item $ExePath -Force
-        throw "Downloaded file too small. URL is not real loader.exe"
-    }
-
-    if ($Bytes[0] -ne 77 -or $Bytes[1] -ne 90) {
-        Remove-Item $ExePath -Force
-        throw "Downloaded file is not EXE. Must start with MZ header"
-    }
-
-    Write-Host "[+] Download complete" -ForegroundColor Green
 }
 
-function Start-GUI {
-    if (!(Test-Path $ExePath)) {
-        Download-Loader
+function Close-Safe {
+    param(
+        $Object
+    )
+
+    if ($null -ne $Object) {
+        try {
+            $Object.Close()
+        }
+        catch {
+        }
+
+        try {
+            $Object.Dispose()
+        }
+        catch {
+        }
+    }
+}
+
+function Show-ErrorMessage {
+    param(
+        [string]$Message
+    )
+
+    Restore-Console
+
+    try {
+        Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
+
+        [System.Windows.Forms.MessageBox]::Show(
+            $Message,
+            "App-Loader Error",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Error
+        ) | Out-Null
+    }
+    catch {
+        Clear-Host
+        Write-Host ""
+        Write-Host "App-Loader Error" -ForegroundColor Red
+        Write-Host ""
+        Write-Host $Message -ForegroundColor White
+        Write-Host ""
+        Start-Sleep -Seconds 7
+    }
+}
+
+function Close-ThisPowerShell {
+    Restore-Console
+
+    Start-Sleep -Milliseconds 400
+
+    try {
+        Stop-Process -Id $PID -Force
+    }
+    catch {
+        exit
+    }
+}
+
+function Test-ExeFile {
+    param(
+        [string]$Path
+    )
+
+    if (!(Test-Path $Path)) {
+        return $false
     }
 
-    Progress "Loading user interface"
-    Progress "Loading secure data"
-    Progress "Preparing launch environment"
+    $FileInfo = Get-Item $Path
 
-    Write-Host ""
-    Write-Host "[+] Loading complete" -ForegroundColor Green
-    Write-Host "[+] Opening loader.exe..." -ForegroundColor Green
+    if ($FileInfo.Length -lt 2) {
+        return $false
+    }
 
-    Start-Sleep -Milliseconds 800
+    $FileStream = $null
 
-    Start-Process -FilePath $ExePath -WorkingDirectory $InstallFolder
+    try {
+        $FileStream = [System.IO.File]::OpenRead($Path)
 
-    Start-Sleep -Milliseconds 500
-    exit
+        $Byte1 = $FileStream.ReadByte()
+        $Byte2 = $FileStream.ReadByte()
+
+        if ($Byte1 -eq 77 -and $Byte2 -eq 90) {
+            return $true
+        }
+
+        return $false
+    }
+    catch {
+        Write-Log "Test-ExeFile failed"
+        Write-Log $_.Exception.Message
+        return $false
+    }
+    finally {
+        if ($null -ne $FileStream) {
+            $FileStream.Close()
+            $FileStream.Dispose()
+        }
+    }
+}
+
+function Download-FileWithPixelBar {
+    param(
+        [string]$Url,
+        [string]$Destination
+    )
+
+    $Response = $null
+    $InputStream = $null
+    $OutputStream = $null
+
+    try {
+        Write-Log "Trying download URL: $Url"
+
+        Show-PixelLoading -Percent 0 -StatusText "Preparing download"
+
+        $Request = [System.Net.HttpWebRequest]::Create($Url)
+        $Request.Method = "GET"
+        $Request.AllowAutoRedirect = $true
+        $Request.UserAgent = "Mozilla/5.0 App-Loader"
+        $Request.Timeout = 60000
+        $Request.ReadWriteTimeout = 60000
+
+        $Response = $Request.GetResponse()
+        $StatusCode = [int]$Response.StatusCode
+
+        Write-Log "HTTP Status: $StatusCode"
+
+        if ($StatusCode -lt 200 -or $StatusCode -ge 300) {
+            throw "Download failed. HTTP status: $StatusCode"
+        }
+
+        $TotalBytes = [int64]$Response.ContentLength
+
+        $InputStream = $Response.GetResponseStream()
+        $OutputStream = [System.IO.File]::Create($Destination)
+
+        $Buffer = New-Object byte[] 65536
+        $TotalRead = 0
+        $Percent = 0
+        $LastPercent = -1
+        $LastDrawTime = Get-Date
+
+        while ($true) {
+            $Read = $InputStream.Read($Buffer, 0, $Buffer.Length)
+
+            if ($Read -le 0) {
+                break
+            }
+
+            $OutputStream.Write($Buffer, 0, $Read)
+            $TotalRead += $Read
+
+            if ($TotalBytes -gt 0) {
+                $Percent = [int][math]::Floor(($TotalRead / $TotalBytes) * 100)
+            }
+            else {
+                if ($Percent -lt 95) {
+                    $Percent = $Percent + 1
+                }
+            }
+
+            $Now = Get-Date
+            $Elapsed = ($Now - $LastDrawTime).TotalMilliseconds
+
+            if (($Percent -ne $LastPercent) -and ($Elapsed -ge 70)) {
+                Show-PixelLoading -Percent $Percent -StatusText "Downloading loader.exe"
+                $LastPercent = $Percent
+                $LastDrawTime = $Now
+            }
+        }
+
+        Close-Safe -Object $OutputStream
+        Close-Safe -Object $InputStream
+        Close-Safe -Object $Response
+
+        Show-PixelLoading -Percent 100 -StatusText "Download complete"
+        Start-Sleep -Milliseconds 500
+
+        return $true
+    }
+    catch {
+        Close-Safe -Object $OutputStream
+        Close-Safe -Object $InputStream
+        Close-Safe -Object $Response
+
+        Write-Log "Download failed from URL:"
+        Write-Log $Url
+        Write-Log $_.Exception.Message
+
+        return $false
+    }
+}
+
+function Download-LoaderExe {
+    param(
+        [string]$Destination
+    )
+
+    if (Test-Path $Destination) {
+        try {
+            Remove-Item -Path $Destination -Force
+        }
+        catch {
+            Write-Log "Cannot remove old loader.exe"
+            Write-Log $_.Exception.Message
+        }
+    }
+
+    $DownloadOK = Download-FileWithPixelBar -Url $ExeUrlPrimary -Destination $Destination
+
+    if ($DownloadOK -eq $true) {
+        if (Test-ExeFile -Path $Destination) {
+            return $true
+        }
+
+        Write-Log "Primary URL downloaded file but it is not valid EXE"
+
+        try {
+            Remove-Item -Path $Destination -Force
+        }
+        catch {
+        }
+    }
+
+    $DownloadOK = Download-FileWithPixelBar -Url $ExeUrlBackup -Destination $Destination
+
+    if ($DownloadOK -eq $true) {
+        if (Test-ExeFile -Path $Destination) {
+            return $true
+        }
+
+        Write-Log "Backup URL downloaded file but it is not valid EXE"
+
+        try {
+            Remove-Item -Path $Destination -Force
+        }
+        catch {
+        }
+    }
+
+    return $false
 }
 
 try {
-    Show-Logo
+    Set-ConsoleReady
 
-    Step "Checking system"
-    Step "Loading protected modules"
-    Step "Preparing GUI session"
+    if (!(Test-Path $TempFolder)) {
+        New-Item -ItemType Directory -Path $TempFolder | Out-Null
+    }
 
-    Prepare-Folder
+    if (Test-Path $LogFile) {
+        Remove-Item -Path $LogFile -Force
+    }
 
-    Progress "Checking loader.exe"
+    Write-Log "Script started"
+    Write-Log "Script version: $ScriptVersion"
+    Write-Log "Primary EXE URL: $ExeUrlPrimary"
+    Write-Log "Backup EXE URL: $ExeUrlBackup"
 
-    Start-GUI
+    Show-PixelLoading -Percent 5 -StatusText "Checking system"
+    Start-Sleep -Milliseconds 400
+
+    Show-PixelLoading -Percent 15 -StatusText "Loading protected modules"
+    Start-Sleep -Milliseconds 400
+
+    Show-PixelLoading -Percent 25 -StatusText "Preparing GUI session"
+    Start-Sleep -Milliseconds 400
+
+    $DownloadResult = Download-LoaderExe -Destination $OutFile
+
+    if ($DownloadResult -ne $true) {
+        throw "loader.exe not found or invalid. Upload loader.exe to GitHub Releases, not raw/main. Required link: https://github.com/Wxyuz/App-Loader/releases/latest/download/loader.exe"
+    }
+
+    if (!(Test-Path $OutFile)) {
+        throw "Download completed, but loader.exe was not found."
+    }
+
+    $DownloadedFile = Get-Item $OutFile
+
+    if ($DownloadedFile.Length -le 0) {
+        throw "Downloaded loader.exe is empty."
+    }
+
+    if (!(Test-ExeFile -Path $OutFile)) {
+        throw "Downloaded file is not a valid EXE."
+    }
+
+    try {
+        Unblock-File -Path $OutFile -ErrorAction SilentlyContinue
+    }
+    catch {
+        Write-Log "Unblock-File failed"
+        Write-Log $_.Exception.Message
+    }
+
+    Show-PixelLoading -Percent 100 -StatusText "Starting GUI"
+    Start-Sleep -Milliseconds 700
+
+    $ProcessInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $ProcessInfo.FileName = $OutFile
+    $ProcessInfo.WorkingDirectory = $TempFolder
+    $ProcessInfo.UseShellExecute = $true
+    $ProcessInfo.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Normal
+
+    $StartedProcess = [System.Diagnostics.Process]::Start($ProcessInfo)
+
+    if ($null -eq $StartedProcess) {
+        throw "Cannot start loader.exe."
+    }
+
+    Write-Log "loader.exe started"
+    Write-Log "Path: $OutFile"
+
+    Start-Sleep -Milliseconds 1200
+
+    Close-ThisPowerShell
 }
 catch {
-    Write-Host ""
-    Write-Host "[FAIL] ERROR" -ForegroundColor Red
-    Write-Host $_.Exception.Message -ForegroundColor Yellow
-    Write-Host ""
-    Write-Host "วิธีแก้:" -ForegroundColor Cyan
-    Write-Host "1. อัป loader.exe ไปที่ GitHub Releases"
-    Write-Host "2. ตั้ง tag เป็น v1.0"
-    Write-Host "3. ลิงก์ต้องเป็น releases/download/v1.0/loader.exe"
-    Write-Host "4. อัปเดตไฟล์ P.ps1 บน GitHub ให้เป็นโค้ดใหม่นี้"
-    Write-Host ""
-    pause
-    exit
+    $ErrorMessage = $_.Exception.Message
+
+    Write-Log "Fatal error"
+    Write-Log $ErrorMessage
+
+    Show-ErrorMessage -Message $ErrorMessage
+
+    Close-ThisPowerShell
 }
