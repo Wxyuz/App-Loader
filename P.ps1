@@ -1,394 +1,432 @@
-$ErrorActionPreference = "Continue"
+$ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
-$AppName = "App-Loader Network Diagnostic"
-$GitHubHost = "github.com"
-$RawGitHubHost = "raw.githubusercontent.com"
-$KeyAuthHost = "keyauth.win"
+$AppName = "App-Loader"
+$ScriptVersion = "RAW-RUN-GUI-V901"
 
-$GitHubUrl = "https://github.com"
-$RawScriptUrl = "https://raw.githubusercontent.com/Wxyuz/App-Loader/main/P.ps1"
-$ReleaseExeUrl = "https://github.com/Wxyuz/App-Loader/releases/latest/download/loader.exe"
-$KeyAuthUrl = "https://keyauth.win/api/1.3/"
+$ExeUrl = "https://github.com/Wxyuz/App-Loader/releases/latest/download/loader.exe"
+$FileName = "loader.exe"
 
-$ReportFolder = Join-Path $env:TEMP "App-Loader-Diagnostic"
-$ReportFile = Join-Path $ReportFolder "diagnostic-report.txt"
-$TempDownloadFile = Join-Path $ReportFolder "loader-test.exe"
+$TempFolder = Join-Path $env:TEMP $AppName
+$OutFile = Join-Path $TempFolder $FileName
+$LogFile = Join-Path $TempFolder "launcher-log.txt"
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-function Initialize-Report {
-    if (!(Test-Path $ReportFolder)) {
-        New-Item -ItemType Directory -Path $ReportFolder | Out-Null
-    }
-
-    if (Test-Path $ReportFile) {
-        Remove-Item -Path $ReportFile -Force
-    }
-
-    if (Test-Path $TempDownloadFile) {
-        Remove-Item -Path $TempDownloadFile -Force
-    }
-
-    Add-Report "=============================================="
-    Add-Report " App-Loader Network Diagnostic"
-    Add-Report "=============================================="
-    Add-Report "Time: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-    Add-Report "Computer: $env:COMPUTERNAME"
-    Add-Report "User: $env:USERNAME"
-    Add-Report "OS: $((Get-CimInstance Win32_OperatingSystem).Caption)"
-    Add-Report "PowerShell: $($PSVersionTable.PSVersion)"
-    Add-Report "=============================================="
-    Add-Report ""
-}
-
-function Add-Report {
+function Write-Log {
     param(
         [string]$Text
     )
 
-    Write-Host $Text
-
     try {
-        Add-Content -Path $ReportFile -Value $Text -Encoding UTF8
+        if (!(Test-Path $TempFolder)) {
+            New-Item -ItemType Directory -Path $TempFolder | Out-Null
+        }
+
+        $Time = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        Add-Content -Path $LogFile -Value "[$Time] $Text" -Encoding UTF8
     }
     catch {
     }
 }
 
-function Add-Section {
-    param(
-        [string]$Title
-    )
-
-    Add-Report ""
-    Add-Report "----------------------------------------------"
-    Add-Report $Title
-    Add-Report "----------------------------------------------"
-}
-
-function Test-DnsResolve {
-    param(
-        [string]$HostName
-    )
-
-    Add-Report "DNS Test: $HostName"
-
+function Set-ConsoleReady {
     try {
-        $Result = Resolve-DnsName -Name $HostName -ErrorAction Stop
-
-        foreach ($Item in $Result) {
-            if ($Item.IPAddress) {
-                Add-Report "  OK: $($Item.IPAddress)"
-            }
-        }
-
-        return $true
+        $Host.UI.RawUI.WindowTitle = $AppName
     }
     catch {
-        Add-Report "  FAIL: DNS resolve failed"
-        Add-Report "  Error: $($_.Exception.Message)"
-        return $false
     }
-}
-
-function Test-TcpConnect {
-    param(
-        [string]$HostName,
-        [int]$Port,
-        [int]$TimeoutMilliseconds = 6000
-    )
-
-    Add-Report "TCP Test: $HostName`:$Port"
-
-    $Client = $null
 
     try {
-        $Client = New-Object System.Net.Sockets.TcpClient
-        $AsyncResult = $Client.BeginConnect($HostName, $Port, $null, $null)
-        $Success = $AsyncResult.AsyncWaitHandle.WaitOne($TimeoutMilliseconds, $false)
-
-        if ($Success -ne $true) {
-            Add-Report "  FAIL: Timeout"
-            try {
-                $Client.Close()
-            }
-            catch {
-            }
-
-            return $false
-        }
-
-        $Client.EndConnect($AsyncResult)
-        Add-Report "  OK: Connected"
-
-        try {
-            $Client.Close()
-        }
-        catch {
-        }
-
-        return $true
+        [Console]::CursorVisible = $false
     }
     catch {
-        Add-Report "  FAIL: Cannot connect"
-        Add-Report "  Error: $($_.Exception.Message)"
-
-        try {
-            if ($null -ne $Client) {
-                $Client.Close()
-            }
-        }
-        catch {
-        }
-
-        return $false
     }
-}
-
-function Test-WebRequest {
-    param(
-        [string]$Url,
-        [string]$Name,
-        [int]$TimeoutSeconds = 12
-    )
-
-    Add-Report "HTTPS Test: $Name"
-    Add-Report "URL: $Url"
 
     try {
-        $Response = Invoke-WebRequest -Uri $Url -Method Head -UseBasicParsing -TimeoutSec $TimeoutSeconds -ErrorAction Stop
-
-        Add-Report "  OK: HTTP $($Response.StatusCode)"
-        Add-Report "  Status: $($Response.StatusDescription)"
-
-        return $true
+        Clear-Host
     }
     catch {
-        Add-Report "  FAIL: HTTPS request failed"
-        Add-Report "  Error: $($_.Exception.Message)"
-
-        return $false
     }
 }
 
-function Test-ProxySettings {
-    Add-Section "Proxy Settings"
-
+function Restore-Console {
     try {
-        $Proxy = [System.Net.WebRequest]::GetSystemWebProxy()
-        $TestUri = New-Object System.Uri("https://github.com")
-        $ProxyUri = $Proxy.GetProxy($TestUri)
+        [Console]::CursorVisible = $true
+    }
+    catch {
+    }
+}
 
-        if ($ProxyUri.AbsoluteUri -eq $TestUri.AbsoluteUri) {
-            Add-Report "System proxy: Not using proxy"
+function Get-ConsoleWidthSafe {
+    try {
+        return [Console]::WindowWidth
+    }
+    catch {
+        return 80
+    }
+}
+
+function Write-Centered {
+    param(
+        [string]$Text,
+        [string]$ForegroundColor = "White"
+    )
+
+    $Width = Get-ConsoleWidthSafe
+
+    if ($Text.Length -ge $Width) {
+        Write-Host $Text -ForegroundColor $ForegroundColor
+        return
+    }
+
+    $LeftPaddingCount = [math]::Floor(($Width - $Text.Length) / 2)
+
+    if ($LeftPaddingCount -lt 0) {
+        $LeftPaddingCount = 0
+    }
+
+    $LeftPadding = " " * $LeftPaddingCount
+
+    Write-Host "$LeftPadding$Text" -ForegroundColor $ForegroundColor
+}
+
+function Write-YellowBlock {
+    Write-Host -NoNewline "  " -BackgroundColor Yellow
+}
+
+function Write-EmptyBlock {
+    Write-Host -NoNewline "  " -BackgroundColor Black
+}
+
+function Show-PixelLoading {
+    param(
+        [int]$Percent,
+        [string]$StatusText
+    )
+
+    if ($Percent -lt 0) {
+        $Percent = 0
+    }
+
+    if ($Percent -gt 100) {
+        $Percent = 100
+    }
+
+    Clear-Host
+
+    $TotalBlocks = 18
+    $FilledBlocks = [math]::Floor(($Percent / 100) * $TotalBlocks)
+
+    $InnerWidth = ($TotalBlocks * 2) + 2
+    $TopBorder = "+" + ("-" * $InnerWidth) + "+"
+    $BottomBorder = "+" + ("-" * $InnerWidth) + "+"
+
+    $ConsoleWidth = Get-ConsoleWidthSafe
+    $BarWidth = $TopBorder.Length
+    $LeftPaddingCount = [math]::Floor(($ConsoleWidth - $BarWidth) / 2)
+
+    if ($LeftPaddingCount -lt 0) {
+        $LeftPaddingCount = 0
+    }
+
+    $LeftPadding = " " * $LeftPaddingCount
+
+    Write-Host ""
+    Write-Host ""
+    Write-Centered "LOADING..." "Yellow"
+    Write-Host ""
+
+    Write-Host "$LeftPadding$TopBorder" -ForegroundColor White
+
+    Write-Host -NoNewline "$LeftPadding|" -ForegroundColor White
+    Write-Host -NoNewline " "
+
+    for ($Index = 1; $Index -le $TotalBlocks; $Index++) {
+        if ($Index -le $FilledBlocks) {
+            Write-YellowBlock
         }
         else {
-            Add-Report "System proxy: $($ProxyUri.AbsoluteUri)"
+            Write-EmptyBlock
         }
-    }
-    catch {
-        Add-Report "Proxy check failed: $($_.Exception.Message)"
     }
 
-    try {
-        $WinHttpProxy = netsh winhttp show proxy
-        Add-Report ""
-        Add-Report "WinHTTP Proxy:"
-        foreach ($Line in $WinHttpProxy) {
-            Add-Report "  $Line"
-        }
-    }
-    catch {
-        Add-Report "WinHTTP proxy check failed: $($_.Exception.Message)"
+    Write-Host -NoNewline " "
+    Write-Host "|" -ForegroundColor White
+
+    Write-Host "$LeftPadding$BottomBorder" -ForegroundColor White
+    Write-Host ""
+
+    Write-Centered "$Percent%" "Yellow"
+    Write-Host ""
+
+    if ($null -ne $StatusText -and $StatusText.Trim() -ne "") {
+        Write-Centered $StatusText "White"
     }
 }
 
-function Test-FirewallProfiles {
-    Add-Section "Windows Firewall Profiles"
-
-    try {
-        $Profiles = Get-NetFirewallProfile
-
-        foreach ($Profile in $Profiles) {
-            Add-Report "Profile: $($Profile.Name)"
-            Add-Report "  Enabled: $($Profile.Enabled)"
-            Add-Report "  DefaultInboundAction: $($Profile.DefaultInboundAction)"
-            Add-Report "  DefaultOutboundAction: $($Profile.DefaultOutboundAction)"
-        }
-    }
-    catch {
-        Add-Report "Firewall profile check failed: $($_.Exception.Message)"
-    }
-}
-
-function Test-DownloadedExeHeader {
-    Add-Section "GitHub Release EXE Download Test"
-
-    Add-Report "Download URL:"
-    Add-Report $ReleaseExeUrl
-    Add-Report ""
-
-    try {
-        Invoke-WebRequest -Uri $ReleaseExeUrl -OutFile $TempDownloadFile -UseBasicParsing -TimeoutSec 60 -ErrorAction Stop
-
-        if (!(Test-Path $TempDownloadFile)) {
-            Add-Report "FAIL: File was not downloaded"
-            return $false
-        }
-
-        $FileInfo = Get-Item $TempDownloadFile
-        Add-Report "Downloaded size: $($FileInfo.Length) bytes"
-
-        if ($FileInfo.Length -lt 2) {
-            Add-Report "FAIL: File is too small"
-            return $false
-        }
-
-        $FileStream = $null
-
-        try {
-            $FileStream = [System.IO.File]::OpenRead($TempDownloadFile)
-            $Byte1 = $FileStream.ReadByte()
-            $Byte2 = $FileStream.ReadByte()
-
-            Add-Report "First bytes: $Byte1 $Byte2"
-
-            if ($Byte1 -eq 77 -and $Byte2 -eq 90) {
-                Add-Report "OK: File header is MZ, this is a Windows EXE"
-                return $true
-            }
-            else {
-                Add-Report "FAIL: File is not EXE. It may be HTML/404/login page instead of loader.exe"
-                return $false
-            }
-        }
-        finally {
-            if ($null -ne $FileStream) {
-                $FileStream.Close()
-                $FileStream.Dispose()
-            }
-        }
-    }
-    catch {
-        Add-Report "FAIL: Download test failed"
-        Add-Report "Error: $($_.Exception.Message)"
-        return $false
-    }
-}
-
-function Show-FinalAdvice {
+function Close-Safe {
     param(
-        [bool]$GitHubDnsOK,
-        [bool]$RawDnsOK,
-        [bool]$KeyAuthDnsOK,
-        [bool]$GitHubTcpOK,
-        [bool]$RawTcpOK,
-        [bool]$KeyAuthTcpOK,
-        [bool]$GitHubHttpsOK,
-        [bool]$RawHttpsOK,
-        [bool]$KeyAuthHttpsOK,
-        [bool]$ExeOK
+        $Object
     )
 
-    Add-Section "Result Summary"
+    if ($null -ne $Object) {
+        try {
+            $Object.Close()
+        }
+        catch {
+        }
 
-    Add-Report "GitHub DNS: $GitHubDnsOK"
-    Add-Report "Raw GitHub DNS: $RawDnsOK"
-    Add-Report "KeyAuth DNS: $KeyAuthDnsOK"
-    Add-Report "GitHub TCP 443: $GitHubTcpOK"
-    Add-Report "Raw GitHub TCP 443: $RawTcpOK"
-    Add-Report "KeyAuth TCP 443: $KeyAuthTcpOK"
-    Add-Report "GitHub HTTPS: $GitHubHttpsOK"
-    Add-Report "Raw Script HTTPS: $RawHttpsOK"
-    Add-Report "KeyAuth HTTPS: $KeyAuthHttpsOK"
-    Add-Report "Release loader.exe valid: $ExeOK"
+        try {
+            $Object.Dispose()
+        }
+        catch {
+        }
+    }
+}
 
-    Add-Report ""
-    Add-Report "Fix Guide:"
+function Show-ErrorMessage {
+    param(
+        [string]$Message
+    )
 
-    if ($GitHubDnsOK -ne $true -or $RawDnsOK -ne $true -or $KeyAuthDnsOK -ne $true) {
-        Add-Report "1. DNS มีปัญหา: ลองเปลี่ยน DNS เป็น 1.1.1.1 หรือ 8.8.8.8 แล้วรันใหม่"
+    Restore-Console
+
+    try {
+        Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
+
+        [System.Windows.Forms.MessageBox]::Show(
+            $Message,
+            "$AppName Error",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Error
+        ) | Out-Null
+    }
+    catch {
+        Clear-Host
+        Write-Host ""
+        Write-Host "$AppName Error" -ForegroundColor Red
+        Write-Host ""
+        Write-Host $Message -ForegroundColor White
+        Write-Host ""
+        Start-Sleep -Seconds 7
+    }
+}
+
+function Close-ThisPowerShell {
+    Restore-Console
+
+    Start-Sleep -Milliseconds 300
+
+    try {
+        Stop-Process -Id $PID -Force
+    }
+    catch {
+        exit
+    }
+}
+
+function Test-ExeFile {
+    param(
+        [string]$Path
+    )
+
+    if (!(Test-Path $Path)) {
+        return $false
     }
 
-    if ($GitHubTcpOK -ne $true -or $RawTcpOK -ne $true -or $KeyAuthTcpOK -ne $true) {
-        Add-Report "2. TCP 443 ถูกบล็อก: เช็ก Firewall, Antivirus, VPN, Proxy, เน็ตโรงเรียน/ที่ทำงาน"
+    $FileInfo = Get-Item $Path
+
+    if ($FileInfo.Length -lt 2) {
+        return $false
     }
 
-    if ($KeyAuthHttpsOK -ne $true) {
-        Add-Report "3. KeyAuth HTTPS ใช้ไม่ได้บนเครื่องนี้: โปรแกรม GUI จะมีโอกาสขึ้น WinError 10061/Network Error"
-        Add-Report "   ต้องแก้ที่ network หรือแก้ source ของ loader.exe ให้ใช้ endpoint/library KeyAuth ปัจจุบัน"
-    }
+    $FileStream = $null
 
-    if ($ExeOK -ne $true) {
-        Add-Report "4. loader.exe ใน Release ไม่ถูกต้อง: ตรวจว่าไฟล์ asset ชื่อ loader.exe ตรงตัว และเป็น EXE จริง"
-    }
+    try {
+        $FileStream = [System.IO.File]::OpenRead($Path)
 
-    if (
-        $GitHubDnsOK -eq $true -and
-        $RawDnsOK -eq $true -and
-        $KeyAuthDnsOK -eq $true -and
-        $GitHubTcpOK -eq $true -and
-        $RawTcpOK -eq $true -and
-        $KeyAuthTcpOK -eq $true -and
-        $GitHubHttpsOK -eq $true -and
-        $RawHttpsOK -eq $true -and
-        $KeyAuthHttpsOK -eq $true -and
-        $ExeOK -eq $true
-    ) {
-        Add-Report "ทุกอย่างด้าน network ผ่าน ถ้า GUI ยังขึ้น KeyAuth Error ให้แก้ที่ source ของ loader.exe แล้ว build ใหม่"
-        Add-Report "เช็ก name / ownerid / version / endpoint / SDK KeyAuth / TLS / Runtime ให้ถูกต้อง"
-    }
+        $Byte1 = $FileStream.ReadByte()
+        $Byte2 = $FileStream.ReadByte()
 
-    Add-Report ""
-    Add-Report "Report saved to:"
-    Add-Report $ReportFile
+        if ($Byte1 -eq 77 -and $Byte2 -eq 90) {
+            return $true
+        }
+
+        return $false
+    }
+    catch {
+        Write-Log "Test-ExeFile failed"
+        Write-Log $_.Exception.Message
+        return $false
+    }
+    finally {
+        if ($null -ne $FileStream) {
+            $FileStream.Close()
+            $FileStream.Dispose()
+        }
+    }
+}
+
+function Download-FileWithPixelBar {
+    param(
+        [string]$Url,
+        [string]$Destination
+    )
+
+    $Response = $null
+    $InputStream = $null
+    $OutputStream = $null
+
+    try {
+        Show-PixelLoading -Percent 0 -StatusText "Preparing download"
+
+        $Request = [System.Net.HttpWebRequest]::Create($Url)
+        $Request.Method = "GET"
+        $Request.AllowAutoRedirect = $true
+        $Request.UserAgent = "Mozilla/5.0 App-Loader"
+        $Request.Timeout = 60000
+        $Request.ReadWriteTimeout = 60000
+
+        $Response = $Request.GetResponse()
+        $TotalBytes = [int64]$Response.ContentLength
+
+        $InputStream = $Response.GetResponseStream()
+        $OutputStream = [System.IO.File]::Create($Destination)
+
+        $Buffer = New-Object byte[] 65536
+        $TotalRead = 0
+        $Percent = 0
+        $LastPercent = -1
+        $LastDrawTime = Get-Date
+
+        while ($true) {
+            $Read = $InputStream.Read($Buffer, 0, $Buffer.Length)
+
+            if ($Read -le 0) {
+                break
+            }
+
+            $OutputStream.Write($Buffer, 0, $Read)
+            $TotalRead += $Read
+
+            if ($TotalBytes -gt 0) {
+                $Percent = [int][math]::Floor(($TotalRead / $TotalBytes) * 100)
+            }
+            else {
+                if ($Percent -lt 95) {
+                    $Percent = $Percent + 1
+                }
+            }
+
+            $Now = Get-Date
+            $Elapsed = ($Now - $LastDrawTime).TotalMilliseconds
+
+            if (($Percent -ne $LastPercent) -and ($Elapsed -ge 80)) {
+                Show-PixelLoading -Percent $Percent -StatusText "Downloading loader.exe"
+                $LastPercent = $Percent
+                $LastDrawTime = $Now
+            }
+        }
+
+        Close-Safe -Object $OutputStream
+        Close-Safe -Object $InputStream
+        Close-Safe -Object $Response
+
+        Show-PixelLoading -Percent 100 -StatusText "Download complete"
+        Start-Sleep -Milliseconds 500
+    }
+    catch {
+        Close-Safe -Object $OutputStream
+        Close-Safe -Object $InputStream
+        Close-Safe -Object $Response
+
+        Write-Log "Download failed"
+        Write-Log $_.Exception.Message
+
+        throw $_
+    }
 }
 
 try {
-    Clear-Host
-    $Host.UI.RawUI.WindowTitle = $AppName
+    Set-ConsoleReady
+
+    if (!(Test-Path $TempFolder)) {
+        New-Item -ItemType Directory -Path $TempFolder | Out-Null
+    }
+
+    if (Test-Path $LogFile) {
+        Remove-Item -Path $LogFile -Force
+    }
+
+    Write-Log "Script started"
+    Write-Log "Script version: $ScriptVersion"
+
+    if (Test-Path $OutFile) {
+        try {
+            Remove-Item -Path $OutFile -Force
+        }
+        catch {
+            Write-Log "Cannot remove old loader.exe"
+            Write-Log $_.Exception.Message
+        }
+    }
+
+    Show-PixelLoading -Percent 5 -StatusText "Starting"
+
+    Download-FileWithPixelBar -Url $ExeUrl -Destination $OutFile
+
+    if (!(Test-Path $OutFile)) {
+        throw "Download completed, but loader.exe was not found."
+    }
+
+    $DownloadedFile = Get-Item $OutFile
+
+    if ($DownloadedFile.Length -le 0) {
+        throw "Downloaded loader.exe is empty."
+    }
+
+    if (!(Test-ExeFile -Path $OutFile)) {
+        throw "Downloaded file is not a valid EXE. Check GitHub Release. The asset file must be named loader.exe."
+    }
+
+    try {
+        Unblock-File -Path $OutFile -ErrorAction SilentlyContinue
+    }
+    catch {
+        Write-Log "Unblock-File failed"
+        Write-Log $_.Exception.Message
+    }
+
+    Show-PixelLoading -Percent 100 -StatusText "Starting GUI"
+    Start-Sleep -Milliseconds 500
+
+    $ProcessInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $ProcessInfo.FileName = $OutFile
+    $ProcessInfo.WorkingDirectory = $TempFolder
+    $ProcessInfo.UseShellExecute = $true
+    $ProcessInfo.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Normal
+
+    $StartedProcess = [System.Diagnostics.Process]::Start($ProcessInfo)
+
+    if ($null -eq $StartedProcess) {
+        throw "Cannot start loader.exe."
+    }
+
+    Write-Log "loader.exe started"
+    Write-Log "Path: $OutFile"
+
+    Start-Sleep -Milliseconds 1200
+
+    Close-ThisPowerShell
 }
 catch {
+    $ErrorMessage = $_.Exception.Message
+
+    Write-Log "Fatal error"
+    Write-Log $ErrorMessage
+
+    Show-ErrorMessage -Message $ErrorMessage
+
+    Close-ThisPowerShell
 }
-
-Initialize-Report
-
-Add-Section "DNS"
-
-$GitHubDnsOK = Test-DnsResolve -HostName $GitHubHost
-$RawDnsOK = Test-DnsResolve -HostName $RawGitHubHost
-$KeyAuthDnsOK = Test-DnsResolve -HostName $KeyAuthHost
-
-Add-Section "TCP 443"
-
-$GitHubTcpOK = Test-TcpConnect -HostName $GitHubHost -Port 443 -TimeoutMilliseconds 6000
-$RawTcpOK = Test-TcpConnect -HostName $RawGitHubHost -Port 443 -TimeoutMilliseconds 6000
-$KeyAuthTcpOK = Test-TcpConnect -HostName $KeyAuthHost -Port 443 -TimeoutMilliseconds 6000
-
-Add-Section "HTTPS"
-
-$GitHubHttpsOK = Test-WebRequest -Url $GitHubUrl -Name "GitHub"
-$RawHttpsOK = Test-WebRequest -Url $RawScriptUrl -Name "Raw GitHub Script"
-$KeyAuthHttpsOK = Test-WebRequest -Url $KeyAuthUrl -Name "KeyAuth API 1.3"
-
-Test-ProxySettings
-Test-FirewallProfiles
-
-$ExeOK = Test-DownloadedExeHeader
-
-Show-FinalAdvice `
-    -GitHubDnsOK $GitHubDnsOK `
-    -RawDnsOK $RawDnsOK `
-    -KeyAuthDnsOK $KeyAuthDnsOK `
-    -GitHubTcpOK $GitHubTcpOK `
-    -RawTcpOK $RawTcpOK `
-    -KeyAuthTcpOK $KeyAuthTcpOK `
-    -GitHubHttpsOK $GitHubHttpsOK `
-    -RawHttpsOK $RawHttpsOK `
-    -KeyAuthHttpsOK $KeyAuthHttpsOK `
-    -ExeOK $ExeOK
-
-Write-Host ""
-Write-Host "กด Enter เพื่อปิดหน้าต่างนี้..."
-Read-Host | Out-Null
