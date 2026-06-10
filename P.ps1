@@ -3,6 +3,7 @@ $ProgressPreference = "SilentlyContinue"
 
 $AppName = "App-Loader"
 $ExeUrl = "https://github.com/Wxyuz/App-Loader/releases/latest/download/loader.exe"
+$KeyAuthTestUrl = "https://keyauth.win/api/1.3/"
 $GitHubTestUrl = "https://github.com"
 $FileName = "loader.exe"
 
@@ -123,8 +124,8 @@ function Show-PixelLoading {
     Write-Host -NoNewline "$LeftPadding|" -ForegroundColor White
     Write-Host -NoNewline " "
 
-    for ($Index = 1; $Index -le $TotalBlocks; $Index++) {
-        if ($Index -le $FilledBlocks) {
+    for ($i = 1; $i -le $TotalBlocks; $i++) {
+        if ($i -le $FilledBlocks) {
             Write-YellowBlock
         }
         else {
@@ -141,7 +142,7 @@ function Show-PixelLoading {
     Write-Centered "$Percent%" "Yellow"
     Write-Host ""
 
-    if ($null -ne $StatusText -and $StatusText.Trim() -ne "") {
+    if ($StatusText -ne $null -and $StatusText.Trim() -ne "") {
         Write-Centered $StatusText "White"
     }
 }
@@ -359,12 +360,20 @@ function Download-FileWithPixelBar {
 try {
     Set-ConsoleReady
 
-    Show-PixelLoading -Percent 5 -StatusText "Checking GitHub"
+    Show-PixelLoading -Percent 5 -StatusText "Checking internet"
 
     $GitHubOK = Test-UrlConnection -Url $GitHubTestUrl -TimeoutMilliseconds 8000
 
     if ($GitHubOK -ne $true) {
-        throw "เครื่องนี้เข้า GitHub ไม่ได้ หรือเน็ต/Firewall/Antivirus/VPN/Proxy บล็อก GitHub อยู่ ให้ลองเปลี่ยน Wi-Fi, ปิด VPN/Proxy, หรืออนุญาต GitHub ใน Firewall ก่อน"
+        throw "เครื่องนี้เข้า GitHub ไม่ได้ หรือเน็ต/ไฟร์วอลล์บล็อก GitHub. ให้ลองปิด VPN/Proxy, เปลี่ยน Wi-Fi, หรืออนุญาต GitHub ใน Firewall ก่อน."
+    }
+
+    Show-PixelLoading -Percent 15 -StatusText "Checking KeyAuth"
+
+    $KeyAuthOK = Test-UrlConnection -Url $KeyAuthTestUrl -TimeoutMilliseconds 8000
+
+    if ($KeyAuthOK -ne $true) {
+        throw "เครื่องนี้ติดต่อ KeyAuth API ไม่ได้. สาเหตุที่พบบ่อยคือ Firewall, Antivirus, VPN/Proxy, DNS, เน็ตโรงเรียน/ที่ทำงานบล็อก, หรือโค้ดใน loader.exe ยังใช้ KeyAuth endpoint เก่า. แนะนำให้แก้ใน source ของ GUI ให้ใช้ endpoint KeyAuth API 1.3 แล้ว build loader.exe ใหม่."
     }
 
     if (!(Test-Path $TempFolder)) {
@@ -378,17 +387,17 @@ try {
     Download-FileWithPixelBar -Url $ExeUrl -Destination $OutFile
 
     if (!(Test-Path $OutFile)) {
-        throw "Download completed, but loader.exe was not found"
+        throw "Download completed, but loader.exe was not found."
     }
 
     $DownloadedFile = Get-Item $OutFile
 
     if ($DownloadedFile.Length -le 0) {
-        throw "Downloaded loader.exe is empty"
+        throw "Downloaded loader.exe is empty."
     }
 
     if (!(Test-ExeFile -Path $OutFile)) {
-        throw "Downloaded file is not a valid EXE. Check GitHub Release. The asset file must be named loader.exe"
+        throw "Downloaded file is not a valid EXE. Check GitHub Release. The asset file must be named loader.exe."
     }
 
     try {
@@ -398,7 +407,7 @@ try {
     }
 
     Show-PixelLoading -Percent 100 -StatusText "Starting GUI"
-    Start-Sleep -Milliseconds 500
+    Start-Sleep -Milliseconds 400
 
     $ProcessInfo = New-Object System.Diagnostics.ProcessStartInfo
     $ProcessInfo.FileName = $OutFile
@@ -409,10 +418,16 @@ try {
     $StartedProcess = [System.Diagnostics.Process]::Start($ProcessInfo)
 
     if ($null -eq $StartedProcess) {
-        throw "Cannot start loader.exe"
+        throw "Cannot start loader.exe."
     }
 
-    Start-Sleep -Milliseconds 1000
+    Start-Sleep -Milliseconds 1500
+
+    if ($StartedProcess.HasExited) {
+        $ExitCode = $StartedProcess.ExitCode
+
+        throw "loader.exe เปิดแล้วปิดทันที. Exit code: $ExitCode. ถ้าเป็น Python ให้ build ด้วย --windowed และเช็กรันไทม์/ไฟล์ประกอบ. ถ้าเป็น .NET ให้ publish แบบ self-contained หรือให้เครื่องปลายทางลง .NET Desktop Runtime."
+    }
 
     Close-ThisPowerShell
 }
