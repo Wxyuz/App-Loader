@@ -3,6 +3,8 @@ $ProgressPreference = "SilentlyContinue"
 
 $AppName = "App-Loader"
 $ExeUrl = "https://github.com/Wxyuz/App-Loader/releases/latest/download/loader.exe"
+$KeyAuthTestUrl = "https://keyauth.win/api/1.3/"
+$GitHubTestUrl = "https://github.com"
 $FileName = "loader.exe"
 
 $TempFolder = Join-Path $env:TEMP $AppName
@@ -71,30 +73,6 @@ function Write-Centered {
     Write-Host "$LeftPadding$Text" -ForegroundColor $ForegroundColor
 }
 
-function Write-CenteredNoNewline {
-    param(
-        [string]$Text,
-        [string]$ForegroundColor = "White"
-    )
-
-    $Width = Get-ConsoleWidthSafe
-
-    if ($Text.Length -ge $Width) {
-        Write-Host -NoNewline $Text -ForegroundColor $ForegroundColor
-        return
-    }
-
-    $LeftPaddingCount = [math]::Floor(($Width - $Text.Length) / 2)
-
-    if ($LeftPaddingCount -lt 0) {
-        $LeftPaddingCount = 0
-    }
-
-    $LeftPadding = " " * $LeftPaddingCount
-
-    Write-Host -NoNewline "$LeftPadding$Text" -ForegroundColor $ForegroundColor
-}
-
 function Write-YellowBlock {
     Write-Host -NoNewline "  " -BackgroundColor Yellow
 }
@@ -105,7 +83,8 @@ function Write-EmptyBlock {
 
 function Show-PixelLoading {
     param(
-        [int]$Percent
+        [int]$Percent,
+        [string]$StatusText
     )
 
     if ($Percent -lt 0) {
@@ -161,6 +140,11 @@ function Show-PixelLoading {
     Write-Host ""
 
     Write-Centered "$Percent%" "Yellow"
+    Write-Host ""
+
+    if ($StatusText -ne $null -and $StatusText.Trim() -ne "") {
+        Write-Centered $StatusText "White"
+    }
 }
 
 function Close-Safe {
@@ -180,6 +164,79 @@ function Close-Safe {
         }
         catch {
         }
+    }
+}
+
+function Show-ErrorMessage {
+    param(
+        [string]$Message
+    )
+
+    Restore-Console
+
+    try {
+        Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
+
+        [System.Windows.Forms.MessageBox]::Show(
+            $Message,
+            "$AppName Error",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Error
+        ) | Out-Null
+    }
+    catch {
+        Clear-Host
+        Write-Host ""
+        Write-Host "$AppName Error" -ForegroundColor Red
+        Write-Host ""
+        Write-Host $Message -ForegroundColor White
+        Write-Host ""
+        Start-Sleep -Seconds 7
+    }
+}
+
+function Close-ThisPowerShell {
+    Restore-Console
+
+    Start-Sleep -Milliseconds 300
+
+    try {
+        Stop-Process -Id $PID -Force
+    }
+    catch {
+        exit
+    }
+}
+
+function Test-UrlConnection {
+    param(
+        [string]$Url,
+        [int]$TimeoutMilliseconds
+    )
+
+    $Request = $null
+    $Response = $null
+
+    try {
+        $Request = [System.Net.HttpWebRequest]::Create($Url)
+        $Request.Method = "GET"
+        $Request.UserAgent = "Mozilla/5.0 App-Loader"
+        $Request.AllowAutoRedirect = $true
+        $Request.Timeout = $TimeoutMilliseconds
+        $Request.ReadWriteTimeout = $TimeoutMilliseconds
+
+        $Response = $Request.GetResponse()
+
+        if ($null -ne $Response) {
+            Close-Safe -Object $Response
+            return $true
+        }
+
+        return $false
+    }
+    catch {
+        Close-Safe -Object $Response
+        return $false
     }
 }
 
@@ -223,47 +280,6 @@ function Test-ExeFile {
     }
 }
 
-function Show-ErrorMessage {
-    param(
-        [string]$Message
-    )
-
-    Restore-Console
-    Clear-Host
-
-    try {
-        Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
-
-        [System.Windows.Forms.MessageBox]::Show(
-            $Message,
-            "$AppName Error",
-            [System.Windows.Forms.MessageBoxButtons]::OK,
-            [System.Windows.Forms.MessageBoxIcon]::Error
-        ) | Out-Null
-    }
-    catch {
-        Write-Host ""
-        Write-Host "$AppName Error" -ForegroundColor Red
-        Write-Host ""
-        Write-Host $Message -ForegroundColor White
-        Write-Host ""
-        Start-Sleep -Seconds 6
-    }
-}
-
-function Close-ThisPowerShell {
-    Restore-Console
-
-    Start-Sleep -Milliseconds 300
-
-    try {
-        Stop-Process -Id $PID -Force
-    }
-    catch {
-        exit
-    }
-}
-
 function Download-FileWithPixelBar {
     param(
         [string]$Url,
@@ -275,7 +291,7 @@ function Download-FileWithPixelBar {
     $OutputStream = $null
 
     try {
-        Show-PixelLoading -Percent 0
+        Show-PixelLoading -Percent 0 -StatusText "Preparing download"
 
         $Request = [System.Net.HttpWebRequest]::Create($Url)
         $Request.Method = "GET"
@@ -319,7 +335,7 @@ function Download-FileWithPixelBar {
             $Elapsed = ($Now - $LastDrawTime).TotalMilliseconds
 
             if (($Percent -ne $LastPercent) -and ($Elapsed -ge 80)) {
-                Show-PixelLoading -Percent $Percent
+                Show-PixelLoading -Percent $Percent -StatusText "Downloading loader.exe"
                 $LastPercent = $Percent
                 $LastDrawTime = $Now
             }
@@ -329,7 +345,7 @@ function Download-FileWithPixelBar {
         Close-Safe -Object $InputStream
         Close-Safe -Object $Response
 
-        Show-PixelLoading -Percent 100
+        Show-PixelLoading -Percent 100 -StatusText "Download complete"
         Start-Sleep -Milliseconds 500
     }
     catch {
@@ -343,6 +359,22 @@ function Download-FileWithPixelBar {
 
 try {
     Set-ConsoleReady
+
+    Show-PixelLoading -Percent 5 -StatusText "Checking internet"
+
+    $GitHubOK = Test-UrlConnection -Url $GitHubTestUrl -TimeoutMilliseconds 8000
+
+    if ($GitHubOK -ne $true) {
+        throw "เครื่องนี้เข้า GitHub ไม่ได้ หรือเน็ต/ไฟร์วอลล์บล็อก GitHub. ให้ลองปิด VPN/Proxy, เปลี่ยน Wi-Fi, หรืออนุญาต GitHub ใน Firewall ก่อน."
+    }
+
+    Show-PixelLoading -Percent 15 -StatusText "Checking KeyAuth"
+
+    $KeyAuthOK = Test-UrlConnection -Url $KeyAuthTestUrl -TimeoutMilliseconds 8000
+
+    if ($KeyAuthOK -ne $true) {
+        throw "เครื่องนี้ติดต่อ KeyAuth API ไม่ได้. สาเหตุที่พบบ่อยคือ Firewall, Antivirus, VPN/Proxy, DNS, เน็ตโรงเรียน/ที่ทำงานบล็อก, หรือโค้ดใน loader.exe ยังใช้ KeyAuth endpoint เก่า. แนะนำให้แก้ใน source ของ GUI ให้ใช้ endpoint KeyAuth API 1.3 แล้ว build loader.exe ใหม่."
+    }
 
     if (!(Test-Path $TempFolder)) {
         New-Item -ItemType Directory -Path $TempFolder | Out-Null
@@ -374,7 +406,7 @@ try {
     catch {
     }
 
-    Show-PixelLoading -Percent 100
+    Show-PixelLoading -Percent 100 -StatusText "Starting GUI"
     Start-Sleep -Milliseconds 400
 
     $ProcessInfo = New-Object System.Diagnostics.ProcessStartInfo
@@ -389,7 +421,13 @@ try {
         throw "Cannot start loader.exe."
     }
 
-    Start-Sleep -Milliseconds 900
+    Start-Sleep -Milliseconds 1500
+
+    if ($StartedProcess.HasExited) {
+        $ExitCode = $StartedProcess.ExitCode
+
+        throw "loader.exe เปิดแล้วปิดทันที. Exit code: $ExitCode. ถ้าเป็น Python ให้ build ด้วย --windowed และเช็กรันไทม์/ไฟล์ประกอบ. ถ้าเป็น .NET ให้ publish แบบ self-contained หรือให้เครื่องปลายทางลง .NET Desktop Runtime."
+    }
 
     Close-ThisPowerShell
 }
